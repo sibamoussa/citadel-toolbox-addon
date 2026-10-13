@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Validate Citadel Toolbox add-on",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "pytest"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+      },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build example Toolbox",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/Build-Toolbox.ps1",
+      "args": ["-Entity", "example", "-AllowUnresolved"],
+      "problemMatcher": []
+    }
+  ]
+}

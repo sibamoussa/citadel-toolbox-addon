@@ -1,0 +1,34 @@
+metadata:
+  name: microsoft-toolbox
+  description: Shared Citadel capabilities customized for Microsoft.
+
+tools:
+  - id: enterprise-knowledge
+    provider:
+      project_connection_id: /subscriptions/52addf35-3802-4d0f-86b2-2e88b023a0a6/resourceGroups/rg-sibamoussa-4268/providers/Microsoft.CognitiveServices/accounts/customer-demo-project-resource/projects/customer-demo-project/connections/aisearchresourcenhwnaa
+      index_name: policy-index
+
+  - id: employee-context
+    enabled: false
+
+  - id: government-systems
+    provider:
+      server_label: microsoft-weather
+      server_url: https://mcp-weather-server.yellowmushroom-bd082208.eastus.azurecontainerapps.io/mcp
+      project_connection_id: /subscriptions/52addf35-3802-4d0f-86b2-2e88b023a0a6/resourceGroups/rg-sibamoussa-4268/providers/Microsoft.CognitiveServices/accounts/customer-demo-project-resource/projects/customer-demo-project/connections/weather-tool
+
+  - id: approved-web-search
+    provider:
+      filters:
+        allowed_domains:
+          - microsoft.com
+          - learn.microsoft.com
+
+  - id: workflow-actions
+    enabled: false
+
+skills:
+  - id: government-service-routing
+    configuration:
+      entity_name: Microsoft
+      preferred_language: en

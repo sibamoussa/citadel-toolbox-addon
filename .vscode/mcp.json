@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "citadel-government-systems": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp",
+        "run",
+        "${workspaceFolder}/src/citadel_toolbox_mcp/server.py"
+      ]
+    }
+  }
+}

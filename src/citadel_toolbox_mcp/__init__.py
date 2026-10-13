@@ -1,0 +1,1 @@
+"""Reference MCP provider for entity government systems."""

@@ -1,0 +1,39 @@
+metadata:
+  name: example-entity-toolbox
+  description: Shared Citadel capabilities customized for Example Entity.
+
+tools:
+  - id: enterprise-knowledge
+    provider:
+      project_connection_id: ${EXAMPLE_SEARCH_CONNECTION_ID}
+      index_name: example-policies-v1
+      filter: "entity_id eq 'example'"
+
+  - id: employee-context
+    enabled: false
+
+  - id: government-systems
+    provider:
+      server_label: example-government-systems
+      server_url: ${EXAMPLE_GOVERNMENT_SYSTEMS_MCP_URL}
+      project_connection_id: ${EXAMPLE_GOVERNMENT_SYSTEMS_CONNECTION_ID}
+
+  - id: approved-web-search
+    provider:
+      filters:
+        allowed_domains:
+          - example.gov
+          - legislation.example.gov
+
+  - id: workflow-actions
+    enabled: true
+    provider:
+      server_label: example-government-actions
+      server_url: ${EXAMPLE_GOVERNMENT_ACTIONS_MCP_URL}
+      project_connection_id: ${EXAMPLE_GOVERNMENT_ACTIONS_CONNECTION_ID}
+
+skills:
+  - id: government-service-routing
+    configuration:
+      entity_name: Example Entity
+      preferred_language: en
