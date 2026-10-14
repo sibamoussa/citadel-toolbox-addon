@@ -1,6 +1,6 @@
 # Entity Onboarding
 
-Use the [README deployment workflow](../README.md#deploy-in-10-steps) for commands. This checklist
+Use the [README guided deployment](../README.md#guided-deployment) for the primary workflow. This checklist
 captures the decisions an entity owner must approve before deployment.
 
 ## Inputs
@@ -17,19 +17,24 @@ Collect these non-secret values:
 Credentials belong in Foundry project connections or an approved secret store, never in an overlay
 or `.env` file.
 
-## Configure
+## Configure and Publish
 
 ```powershell
-$entity = 'contoso'
-python -m citadel_toolbox.cli init-entity $entity --display-name 'Contoso'
-Copy-Item "entities/$entity/.env.example" "entities/$entity/.env"
+./scripts/Setup-Toolbox.ps1
 ```
 
-Fill every value in `.env`, then review `overlay.yaml`. Start with Work IQ and workflow actions
-disabled. Keep customer values in the overlay; modify the core catalog only for a capability that
-should change for every entity.
+Alternatively, select **Citadel Toolbox: Guided setup and publish** from **Terminal > Run Task** in
+VS Code. The workflow installs local dependencies, creates or reuses the entity, collects the inputs
+above, strictly validates the generated definition, authenticates, creates missing skills, and
+publishes version 1.
 
-## Validate and Publish
+Use `-SkipPublish` to prepare and validate locally. Reruns preserve an existing `.env`; use
+`-Reconfigure` when those values should be replaced. Keep Work IQ and workflow actions disabled for
+the initial deployment.
+
+## Advanced Usage
+
+Build or publish an already configured entity directly when scripting the workflow:
 
 ```powershell
 ./scripts/Build-Toolbox.ps1 -Entity $entity

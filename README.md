@@ -32,106 +32,61 @@ The deployment identity must belong to the tenant that owns the project and have
 the project and its connections. This add-on does not create the Foundry project, Search index, MCP
 service, or project connections.
 
-## Deploy in 10 Steps
+## Guided Deployment
 
-Run every command from the repository root.
+The guided setup creates the Python environment, installs dependencies, initializes or reuses an
+entity, collects non-secret connection references, writes the ignored `.env`, runs a strict build,
+installs the Foundry extension, signs in, provisions missing skills, and publishes version 1.
 
-### 1. Clone and Install
+### Option A: VS Code
+
+1. Clone and open the repository in VS Code.
+2. Open **Terminal > Run Task**.
+3. Select **Citadel Toolbox: Guided setup and publish**.
+4. Answer the prompts.
+
+Use **Citadel Toolbox: Guided local setup** when you want to configure and validate without
+publishing to Foundry.
+
+### Option B: One Command
 
 ```powershell
 git clone https://github.com/sibamoussa/citadel-toolbox-addon.git
 Set-Location citadel-toolbox-addon
-python -m venv .venv
-./.venv/Scripts/Activate.ps1
-python -m pip install -e '.[dev,mcp]'
-python -m pytest
-python -m ruff check .
+./scripts/Setup-Toolbox.ps1
 ```
 
-### 2. Install the Foundry Extension
+The script prompts for:
 
-```powershell
-azd extension install microsoft.foundry
-azd auth login --tenant-id '<tenant-id>'
-```
+- Entity name and display name
+- Search connection resource ID and index name
+- Read-only MCP connection resource ID and endpoint
+- Approved web domains
+- Foundry tenant ID and project endpoint
 
-Confirm the signed-in account is the intended deployment identity.
+Rerunning the script reuses the entity and its local `.env`. Add `-Reconfigure` to replace those
+values, `-SkipPublish` for local setup only, or `-UpdateSkills` when intentionally publishing new
+skill versions.
 
 If a later command reports `AzureDeveloperCLICredential`, repeat `azd auth login` with the owning
 tenant ID. Azure CLI and Azure Developer CLI maintain separate sign-in sessions.
 
-### 3. Select the Foundry Project
+## Advanced Commands
 
-Copy the `AI Foundry API` endpoint from the project overview in the Foundry portal. It has this
-shape:
+The guided script accepts parameters for repeatable or CI-driven execution, so every answer can be
+supplied non-interactively. Run `Get-Help ./scripts/Setup-Toolbox.ps1 -Detailed` for its parameter
+list.
 
-```text
-https://<account>.services.ai.azure.com/api/projects/<project>
-```
-
-```powershell
-$projectEndpoint = 'https://<account>.services.ai.azure.com/api/projects/<project>'
-$env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
-try {
-    azd ai project set $projectEndpoint
-    azd ai project show
-    azd ai connection list --project-endpoint $projectEndpoint
-}
-finally {
-    Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
-}
-```
-
-Identify the Search and read-only MCP project connection names. Their full resource IDs end in
-`/connections/<connection-name>`.
-
-### 4. Initialize the Entity
-
-Use lowercase letters, numbers, and hyphens for the entity name.
-
-```powershell
-$entity = 'contoso'
-python -m citadel_toolbox.cli init-entity $entity --display-name 'Contoso'
-```
-
-This creates `entities/contoso/overlay.yaml` and `entities/contoso/.env.example`. Keep customer
-settings in this directory; do not edit `catalog/core.yaml` for one customer.
-
-### 5. Configure the Entity
-
-```powershell
-Copy-Item "entities/$entity/.env.example" "entities/$entity/.env"
-```
-
-Edit the new `.env` and replace every angle-bracket value:
-
-```dotenv
-CONTOSO_SEARCH_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<search-connection>
-CONTOSO_SEARCH_INDEX_NAME=<existing-index-name>
-CONTOSO_GOVERNMENT_SYSTEMS_MCP_URL=https://<read-mcp-host>/mcp
-CONTOSO_GOVERNMENT_SYSTEMS_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<read-mcp-connection>
-```
-
-Edit `entities/contoso/overlay.yaml` to set approved domains, the Search entity filter, names, and
-descriptions. Leave Work IQ and workflow actions disabled for the first deployment.
-
-The `.env` file is ignored by Git. It should contain resource references and URLs, never API keys,
-tokens, passwords, or connection secrets.
-
-### 6. Run the Strict Build
+Build an existing entity without publishing:
 
 ```powershell
 ./scripts/Build-Toolbox.ps1 -Entity $entity
-Get-Content "generated/$entity/toolbox.yaml"
 ```
 
 Strict compilation rejects missing variables, empty values, unchanged `<placeholder>` values,
 missing connection fields, missing skill files, and unsafe write-tool approval settings.
 
-Review the generated file. Search and MCP providers must be under `connections`; built-in providers
-must be under `tools`; skills must be under `skills`. The file must not contain credentials.
-
-### 7. Publish the First Version
+Publish a configured entity directly:
 
 ```powershell
 ./scripts/Publish-Toolbox.ps1 `
@@ -145,7 +100,7 @@ reuses existing skills, checks for a Toolbox name collision, and creates version
 becomes the default automatically. Use `-UpdateSkills` only when intentionally publishing new skill
 versions.
 
-### 8. Validate the Deployment
+## Validate the Deployment
 
 ```powershell
 $toolboxName = "$entity-toolbox"
@@ -166,7 +121,7 @@ returns expected citations, web search stays within approved domains, `resources
 skills, the read MCP enforces identity and authorization, and no state-changing operation is
 available.
 
-### 9. Connect an Agent
+## Connect an Agent
 
 Use the stable endpoint only after validation:
 
@@ -178,7 +133,7 @@ Python hosted agents use Agent Framework `FoundryToolbox`; .NET hosted agents us
 `AddFoundryToolboxes`; prompt agents attach the endpoint as a remote MCP tool. The client must
 support MCP Resources to discover attached skills.
 
-### 10. Operate Versions
+## Operate Versions
 
 Foundry Toolbox versions are immutable. The publish script creates the first version only. For an
 existing Toolbox, use the installed `azd ai toolbox connection add/remove` and

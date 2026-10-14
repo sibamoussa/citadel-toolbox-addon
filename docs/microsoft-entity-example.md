@@ -3,18 +3,23 @@
 This generic example deploys `microsoft-toolbox` to an existing Microsoft Foundry project. It starts
 read-only and contains no tenant, subscription, project, or endpoint values from a real deployment.
 
-## 1. Initialize
+## Guided Deployment
 
-The repository includes `entities/microsoft/overlay.yaml`. To recreate it from the shared template:
+The repository includes `entities/microsoft/overlay.yaml`. Run one guided command from the repository
+root:
 
 ```powershell
-python -m citadel_toolbox.cli init-entity microsoft --display-name 'Microsoft'
-Copy-Item entities/microsoft/.env.example entities/microsoft/.env
+./scripts/Setup-Toolbox.ps1 -Entity microsoft -DisplayName 'Microsoft'
 ```
 
-## 2. Supply Project References
+In VS Code, the equivalent is **Terminal > Run Task > Citadel Toolbox: Guided setup and publish**.
+Enter `microsoft` when prompted for the entity. The script installs dependencies, reuses the
+checked-in overlay, collects project references, creates `.env`, validates, authenticates, and
+publishes.
 
-Replace every angle-bracket value in `entities/microsoft/.env`:
+## Collected Project References
+
+The guided workflow writes these resource references to ignored `entities/microsoft/.env`:
 
 ```dotenv
 MICROSOFT_SEARCH_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<search-connection>
@@ -23,12 +28,13 @@ MICROSOFT_SYSTEMS_MCP_URL=https://<read-mcp-host>/mcp
 MICROSOFT_SYSTEMS_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<read-mcp-connection>
 ```
 
-These are resource references, not credentials. Foundry stores connection authentication.
-
 The overlay enables Search, Microsoft-approved web domains, Toolbox Search, the read-only MCP
 connection, and all core skills. Work IQ and workflow actions remain disabled.
 
-## 3. Build
+Use `-Reconfigure` to replace an existing `.env`, or `-SkipPublish` to stop after strict local
+validation. These values are resource references, not credentials; Foundry stores authentication.
+
+## Advanced Build
 
 ```powershell
 ./scripts/Build-Toolbox.ps1 -Entity microsoft
@@ -39,7 +45,7 @@ Compilation fails if `.env` is absent, incomplete, or still contains template pl
 that Search and MCP appear under `connections`, built-in providers under `tools`, and all three
 skills under `skills`.
 
-## 4. Authenticate and Publish
+## Advanced Publish
 
 ```powershell
 azd extension install microsoft.foundry
@@ -86,4 +92,4 @@ confirm delegated-user and network requirements. To enable actions, deploy a sep
 service and identity, retain `require_approval: always`, and verify approval behavior end to end.
 
 For updates, promotion, and rollback, follow
-[Operate Versions](../README.md#10-operate-versions).
+[Operate Versions](../README.md#operate-versions).

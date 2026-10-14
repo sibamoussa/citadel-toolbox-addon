@@ -2,7 +2,22 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Validate Citadel Toolbox add-on",
+      "label": "Citadel Toolbox: Guided setup and publish",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/Setup-Toolbox.ps1",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Citadel Toolbox: Guided local setup",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/Setup-Toolbox.ps1",
+      "args": ["-SkipPublish"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Citadel Toolbox: Run tests",
       "type": "shell",
       "command": "python",
       "args": ["-m", "pytest"],
@@ -14,7 +29,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Build example Toolbox",
+      "label": "Citadel Toolbox: Build example",
       "type": "shell",
       "command": "${workspaceFolder}/scripts/Build-Toolbox.ps1",
       "args": ["-Entity", "example", "-AllowUnresolved"],

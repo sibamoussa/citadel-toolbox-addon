@@ -4,8 +4,11 @@ import argparse
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from citadel_toolbox.compiler import ConfigurationError, compile_bundle, write_yaml
+import yaml
+
+from citadel_toolbox.compiler import ENV_PATTERN, ConfigurationError, compile_bundle, write_yaml
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,7 +45,87 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Template directory (defaults to <entities-dir>/example).",
     )
+
+    configure_parser = subparsers.add_parser(
+        "configure-entity", help="Write an entity's local connection references and domains."
+    )
+    configure_parser.add_argument("name", help="Lowercase entity folder name.")
+    configure_parser.add_argument("--entities-dir", type=Path, default=Path("entities"))
+    configure_parser.add_argument("--search-connection-id", required=True)
+    configure_parser.add_argument("--search-index-name", required=True)
+    configure_parser.add_argument("--mcp-url", required=True)
+    configure_parser.add_argument("--mcp-connection-id", required=True)
+    configure_parser.add_argument("--allowed-domain", action="append", required=True)
     return parser
+
+
+def _validate_entity_name(parser: argparse.ArgumentParser, name: str) -> None:
+    if not name.replace("-", "").isalnum() or name.lower() != name:
+        parser.error("Entity name must contain lowercase letters, numbers, and hyphens")
+
+
+def _configure_entity(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    _validate_entity_name(parser, args.name)
+    target = args.entities_dir / args.name
+    overlay_path = target / "overlay.yaml"
+    if not overlay_path.is_file():
+        parser.error(f"Entity overlay not found: {overlay_path}")
+
+    values = {
+        "search connection ID": args.search_connection_id,
+        "search index name": args.search_index_name,
+        "MCP URL": args.mcp_url,
+        "MCP connection ID": args.mcp_connection_id,
+    }
+    invalid = [label for label, value in values.items() if not value.strip() or "\n" in value]
+    if invalid:
+        parser.error(f"Invalid values: {', '.join(invalid)}")
+    mcp_url = urlsplit(args.mcp_url)
+    if mcp_url.scheme != "https" or not mcp_url.netloc:
+        parser.error("MCP URL must be an absolute HTTPS endpoint")
+
+    overlay = yaml.safe_load(overlay_path.read_text(encoding="utf-8"))
+    tools = overlay.get("tools", [])
+
+    def find_tool(tool_id: str) -> dict:
+        tool = next((item for item in tools if item.get("id") == tool_id), None)
+        if tool is None:
+            parser.error(f"Entity overlay must define the {tool_id} tool")
+        return tool
+
+    def variable_name(value: object, field: str) -> str:
+        match = ENV_PATTERN.fullmatch(value) if isinstance(value, str) else None
+        if match is None:
+            parser.error(f"Entity overlay field {field} must contain an environment variable")
+        return match.group(1)
+
+    search_provider = find_tool("enterprise-knowledge").get("provider", {})
+    mcp_provider = find_tool("government-systems").get("provider", {})
+    env_values = {
+        variable_name(search_provider.get("project_connection_id"), "search connection ID"):
+            args.search_connection_id.strip(),
+        variable_name(search_provider.get("index_name"), "search index name"):
+            args.search_index_name.strip(),
+        variable_name(mcp_provider.get("server_url"), "MCP URL"): args.mcp_url.strip(),
+        variable_name(mcp_provider.get("project_connection_id"), "MCP connection ID"):
+            args.mcp_connection_id.strip(),
+    }
+    web_tool = find_tool("approved-web-search")
+    domains = list(dict.fromkeys(domain.strip().lower() for domain in args.allowed_domain))
+    if any(not domain or "://" in domain or "/" in domain for domain in domains):
+        parser.error("Approved domains must be host names without schemes or paths")
+
+    env_path = target / ".env"
+    env_path.write_text(
+        "\n".join([*(f"{name}={value}" for name, value in env_values.items()), ""]),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    web_tool.setdefault("provider", {}).setdefault("filters", {})["allowed_domains"] = domains
+    write_yaml(overlay_path, overlay)
+    print(f"Configured {target}")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -53,8 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "init-entity":
-        if not args.name.replace("-", "").isalnum() or args.name.lower() != args.name:
-            parser.error("Entity name must contain lowercase letters, numbers, and hyphens")
+        _validate_entity_name(parser, args.name)
         source = args.template_dir or args.entities_dir / "example"
         target = args.entities_dir / args.name
         if not source.is_dir():
@@ -74,6 +156,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         env_template.write_text(env_content, encoding="utf-8", newline="\n")
         print(f"Created {target}")
         return 0
+
+    if args.command == "configure-entity":
+        return _configure_entity(parser, args)
 
     try:
         _, rendered = compile_bundle(
