@@ -1,64 +1,67 @@
 # Entity Onboarding
 
-For a complete worked example, see [Microsoft entity example](microsoft-entity-example.md).
+Use the [README deployment workflow](../README.md#deploy-in-10-steps) for commands. This checklist
+captures the decisions an entity owner must approve before deployment.
 
-## 1. Create an Overlay
+## Inputs
+
+Collect these non-secret values:
+
+- Foundry project endpoint and owning tenant ID
+- Azure AI Search project connection resource ID
+- Existing Search index name and entity-scoping filter
+- Read-only MCP project connection resource ID and HTTPS endpoint
+- Approved public web domains
+- Toolbox name and business owner
+
+Credentials belong in Foundry project connections or an approved secret store, never in an overlay
+or `.env` file.
+
+## Configure
 
 ```powershell
-$env:PYTHONPATH = "$PWD/src"
-python -m citadel_toolbox.cli init-entity entity-name --display-name "Entity Name"
+$entity = 'contoso'
+python -m citadel_toolbox.cli init-entity $entity --display-name 'Contoso'
+Copy-Item "entities/$entity/.env.example" "entities/$entity/.env"
 ```
 
-Edit `entities/entity-name/overlay.yaml`. Disable capabilities the entity does not permit and replace
-connection IDs, indexes, filters, domains, and MCP endpoints through environment variables.
+Fill every value in `.env`, then review `overlay.yaml`. Start with Work IQ and workflow actions
+disabled. Keep customer values in the overlay; modify the core catalog only for a capability that
+should change for every entity.
 
-## 2. Prepare Foundry
-
-Create or select the entity's Foundry project. Create its Azure AI Search, MCP, and optional Work IQ
-project connections using least privilege. Upload each enabled folder under `skills/` as a versioned
-Foundry skill through Foundry Toolkit. Skill names must remain unchanged because the generated
-Toolbox references them by name.
-
-Work IQ is optional, preview, delegated-user based, and not supported in network-isolated projects.
-Keep it disabled when those constraints do not fit the entity.
-
-## 3. Build
-
-Set every variable referenced by an enabled capability, then run:
+## Validate and Publish
 
 ```powershell
-./scripts/Build-Toolbox.ps1 -Entity entity-name
-```
-
-For template review without secrets or endpoints, add `-AllowUnresolved`.
-
-## 4. Publish and Promote
-
-Install the `microsoft.foundry` azd extension and authenticate. Publish a new immutable version:
-
-```powershell
+./scripts/Build-Toolbox.ps1 -Entity $entity
 ./scripts/Publish-Toolbox.ps1 `
-  -Entity entity-name `
-  -ProjectEndpoint 'https://<account>.services.ai.azure.com/api/projects/<project>'
+    -Entity $entity `
+    -ProjectEndpoint $projectEndpoint `
+    -ToolboxName "$entity-toolbox"
 ```
 
-Test the version-specific endpoint printed by `azd`. Promote only after tool calls, approval handling,
-identity, citations, and `resources/list` skill discovery pass:
+The publish script provisions missing core skills and creates the first Toolbox version. It does not
+provision the Foundry project, Search index, MCP server, or project connections.
 
-```powershell
-$env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
-azd ai toolbox publish entity-name-toolbox <version> --no-prompt
-Remove-Item Env:AZURE_DEV_USER_AGENT
-```
+Before connecting agents, verify:
 
-## 5. Connect Agents
+- The version-specific MCP endpoint initializes successfully.
+- Search returns authorized records with citations.
+- Web search uses only approved domains.
+- The read MCP enforces identity and record-level authorization.
+- `resources/list` returns the expected skills.
+- No state-changing tool is available.
 
-Use the stable consumer endpoint:
+## Optional Capabilities
 
-```text
-{project-endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1
-```
+Enable Work IQ only after confirming delegated-user consent, tenant policy, and network
+compatibility. It is a preview capability and is unsuitable for network-isolated projects.
 
-Hosted Python agents should use Agent Framework `FoundryToolbox`; hosted .NET agents should use
-`AddFoundryToolboxes`. Prompt agents attach the Toolbox MCP endpoint as their remote MCP tool.
-Clients must support MCP Resources to discover attached skills.
+Enable workflow actions only after deploying a separate action MCP service and connection. Use a
+separate identity, keep `require_approval: always`, and prove the consuming agent pauses the exact
+pending call for explicit approval.
+
+## Handoff Record
+
+Record the entity owner, Foundry project, Toolbox name, default version, validation evidence,
+connection owners, and rollback version in the customer's approved operational system. Do not add
+customer resource identifiers to this public repository.

@@ -8,12 +8,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e '.[dev,mcp]'
       - run: python -m ruff check .
       - run: python -m pytest
-      - run: citadel-toolbox compile --overlay entities/example/overlay.yaml --output generated/example/toolbox.yaml --allow-unresolved
+      - name: Strictly compile the example entity
+        env:
+          EXAMPLE_SEARCH_CONNECTION_ID: /subscriptions/test/resourceGroups/test/providers/Microsoft.CognitiveServices/accounts/test/projects/test/connections/search
+          EXAMPLE_SEARCH_INDEX_NAME: policy-index
+          EXAMPLE_GOVERNMENT_SYSTEMS_MCP_URL: https://mcp.example.gov/mcp
+          EXAMPLE_GOVERNMENT_SYSTEMS_CONNECTION_ID: /subscriptions/test/resourceGroups/test/providers/Microsoft.CognitiveServices/accounts/test/projects/test/connections/read-mcp
+        run: citadel-toolbox compile --overlay entities/example/overlay.yaml --output generated/example/toolbox.yaml

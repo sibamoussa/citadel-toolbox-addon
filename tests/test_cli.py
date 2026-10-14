@@ -35,3 +35,30 @@ def test_init_entity_replaces_example_identifiers(tmp_path) -> None:
     assert "health-authority-entity-toolbox" in overlay
     assert "HEALTH_AUTHORITY_SEARCH_CONNECTION_ID" in overlay
     assert "HEALTH_AUTHORITY_SEARCH_CONNECTION_ID" in env_template
+
+
+def test_init_entity_supports_separate_template_and_destination(tmp_path) -> None:
+    template = tmp_path / "template"
+    destination = tmp_path / "customer-entities"
+    template.mkdir()
+    (template / "overlay.yaml").write_text(
+        "metadata:\n  name: example-toolbox\n  description: Example Entity\n",
+        encoding="utf-8",
+    )
+    (template / ".env.example").write_text("EXAMPLE_VALUE=<value>\n", encoding="utf-8")
+
+    result = main(
+        [
+            "init-entity",
+            "acme",
+            "--display-name",
+            "Acme",
+            "--entities-dir",
+            str(destination),
+            "--template-dir",
+            str(template),
+        ]
+    )
+
+    assert result == 0
+    assert (destination / "acme" / "overlay.yaml").is_file()

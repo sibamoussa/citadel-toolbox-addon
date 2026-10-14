@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+TEMPLATE_VALUE_PATTERN = re.compile(r"<[^<>]+>")
 LIST_KEYS = ("tools", "skills")
 
 
@@ -70,7 +71,7 @@ def _substitute(value: Any, variables: Mapping[str, str], unresolved: set[str]) 
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
             name = match.group(1)
-            if name not in variables:
+            if name not in variables or not variables[name].strip():
                 unresolved.add(name)
                 return match.group(0)
             return variables[name]
@@ -91,6 +92,12 @@ def substitute_variables(
     if strict and unresolved:
         names = ", ".join(sorted(unresolved))
         raise ConfigurationError(f"Missing required variables: {names}")
+    if strict:
+        serialized = yaml.safe_dump(result)
+        template_values = sorted(set(TEMPLATE_VALUE_PATTERN.findall(serialized)))
+        if template_values:
+            values = ", ".join(template_values)
+            raise ConfigurationError(f"Replace template values before compiling: {values}")
     return result
 
 
@@ -112,6 +119,17 @@ def validate_bundle(bundle: Mapping[str, Any]) -> None:
             raise ConfigurationError(
                 f"Write-capable tool '{tool_id}' must set require_approval: always"
             )
+        provider = tool.get("provider", {})
+        provider_type = provider.get("type")
+        required_fields: tuple[str, ...] = ()
+        if provider_type == "azure_ai_search":
+            required_fields = ("project_connection_id", "index_name")
+        elif provider_type == "mcp":
+            required_fields = ("project_connection_id", "server_url")
+        missing_fields = [field for field in required_fields if not provider.get(field)]
+        if missing_fields:
+            fields = ", ".join(missing_fields)
+            raise ConfigurationError(f"Tool '{tool_id}' requires provider fields: {fields}")
 
 
 def render_toolbox(bundle: Mapping[str, Any]) -> dict[str, Any]:
@@ -161,8 +179,17 @@ def compile_bundle(
         bundle[list_key] = [
             item for item in bundle.get(list_key, []) if item.get("enabled", True)
         ]
-    bundle = substitute_variables(bundle, variables or os.environ, strict=strict)
+    source_variables = variables if variables is not None else os.environ
+    bundle = substitute_variables(bundle, source_variables, strict=strict)
     validate_bundle(bundle)
+    project_root = core_path.resolve().parent.parent
+    for skill in bundle.get("skills", []):
+        if path_value := skill.get("path"):
+            skill_path = Path(path_value)
+            if not skill_path.is_absolute():
+                skill_path = project_root / skill_path
+            if not skill_path.is_file():
+                raise ConfigurationError(f"Skill file not found: {path_value}")
     return bundle, render_toolbox(bundle)
 
 

@@ -6,7 +6,7 @@ tools:
   - id: enterprise-knowledge
     provider:
       project_connection_id: ${EXAMPLE_SEARCH_CONNECTION_ID}
-      index_name: example-policies-v1
+      index_name: ${EXAMPLE_SEARCH_INDEX_NAME}
       filter: "entity_id eq 'example'"
 
   - id: employee-context
@@ -26,14 +26,5 @@ tools:
           - legislation.example.gov
 
   - id: workflow-actions
-    enabled: true
-    provider:
-      server_label: example-government-actions
-      server_url: ${EXAMPLE_GOVERNMENT_ACTIONS_MCP_URL}
-      project_connection_id: ${EXAMPLE_GOVERNMENT_ACTIONS_CONNECTION_ID}
-
-skills:
-  - id: government-service-routing
-    configuration:
-      entity_name: Example Entity
-      preferred_language: en
+    enabled: false
+# Enable actions only with a separate approval-gated MCP connection.

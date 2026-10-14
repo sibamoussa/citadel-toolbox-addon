@@ -5,17 +5,17 @@ metadata:
 tools:
   - id: enterprise-knowledge
     provider:
-      project_connection_id: /subscriptions/52addf35-3802-4d0f-86b2-2e88b023a0a6/resourceGroups/rg-sibamoussa-4268/providers/Microsoft.CognitiveServices/accounts/customer-demo-project-resource/projects/customer-demo-project/connections/aisearchresourcenhwnaa
-      index_name: policy-index
+      project_connection_id: ${MICROSOFT_SEARCH_CONNECTION_ID}
+      index_name: ${MICROSOFT_SEARCH_INDEX_NAME}
 
   - id: employee-context
     enabled: false
 
   - id: government-systems
     provider:
-      server_label: microsoft-weather
-      server_url: https://mcp-weather-server.yellowmushroom-bd082208.eastus.azurecontainerapps.io/mcp
-      project_connection_id: /subscriptions/52addf35-3802-4d0f-86b2-2e88b023a0a6/resourceGroups/rg-sibamoussa-4268/providers/Microsoft.CognitiveServices/accounts/customer-demo-project-resource/projects/customer-demo-project/connections/weather-tool
+      server_label: microsoft-systems
+      server_url: ${MICROSOFT_SYSTEMS_MCP_URL}
+      project_connection_id: ${MICROSOFT_SYSTEMS_CONNECTION_ID}
 
   - id: approved-web-search
     provider:
@@ -26,9 +26,4 @@ tools:
 
   - id: workflow-actions
     enabled: false
-
-skills:
-  - id: government-service-routing
-    configuration:
-      entity_name: Microsoft
-      preferred_language: en
+# Enable actions only with a separate approval-gated MCP connection.

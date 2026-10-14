@@ -1,362 +1,235 @@
 # Citadel Toolbox Add-on
 
-A reusable Microsoft Foundry Toolbox product for organizations that deploy the Microsoft Citadel
-reference architecture. The core catalog is centrally governed while every entity configures its own
-connections, indexes, approved domains, enabled capabilities, and skill versions without a fork.
+A reusable Microsoft Foundry Toolbox add-on for Citadel deployments. A governed core defines the
+approved tools and skills; each customer supplies only an entity overlay and Foundry connection
+references. Customers do not fork the catalog or store credentials in this repository.
 
-## Included Capabilities
+## What Is Included
 
-| Capability | Core implementation | Default |
+| Capability | Provider | Default |
 | --- | --- | --- |
 | Enterprise knowledge | Azure AI Search | Enabled |
-| Employee and M365 context | Work IQ preview | Disabled |
 | Government systems | Read-only MCP | Enabled |
 | Approved public information | Restricted Web Search | Enabled |
-| Workflow actions | Approval-gated MCP | Disabled |
 | Tool discovery | Toolbox Search | Enabled |
+| Employee and M365 context | Work IQ preview | Disabled |
+| Workflow actions | Approval-gated MCP | Disabled |
 
-The Toolbox also exposes three reusable skills as MCP resources: enterprise grounding, government
-service routing, and safe transactions.
+Three reusable Foundry skills are provisioned by the publish script: enterprise grounding,
+government service routing, and safe transactions.
 
-## Project Layout
+## Prerequisites
 
-- `catalog/core.yaml`: governed capabilities and defaults
-- `entities/<entity>/overlay.yaml`: entity-owned customization
-- `skills/`: versioned Foundry skill sources
-- `src/citadel_toolbox/`: merge, validation, and rendering CLI
-- `src/citadel_toolbox_mcp/`: replaceable reference government MCP provider
-- `scripts/`: local build and Foundry version publication
-- `docs/`: architecture and entity onboarding
+- Windows PowerShell 7 or later
+- Python 3.11 or newer
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
+- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
+- Access to an existing Microsoft Foundry project
+- A project connection to Azure AI Search and an existing index
+- A project connection to a deployed read-only MCP endpoint
 
-## Local Setup
+The deployment identity must belong to the tenant that owns the project and have permission to use
+the project and its connections. This add-on does not create the Foundry project, Search index, MCP
+service, or project connections.
 
-```powershell
-python -m pip install -e '.[dev,mcp]'
-$env:PYTHONPATH = "$PWD/src"
-python -m pytest
-python -m citadel_toolbox.cli compile `
-	--overlay entities/example/overlay.yaml `
-	--output generated/example/toolbox.yaml `
-	--allow-unresolved
-```
+## Deploy in 10 Steps
 
-Run the sample MCP server over Streamable HTTP:
+Run every command from the repository root.
+
+### 1. Clone and Install
 
 ```powershell
-python -m mcp run src/citadel_toolbox_mcp/server.py --transport streamable-http
-```
-
-The development MCP configuration is in `.vscode/mcp.json`.
-
-## Customize an Entity
-
-```powershell
-python -m citadel_toolbox.cli init-entity entity-name --display-name "Entity Name"
-```
-
-See [entity onboarding](docs/entity-onboarding.md) for connection, skill upload, publication, testing,
-and promotion. Follow the [Microsoft entity example](docs/microsoft-entity-example.md) for a complete
-step-by-step walkthrough. See [architecture](docs/architecture.md) for ownership and security
-boundaries.
-
-## Replicate the Microsoft Entity Deployment
-
-Use this workflow to deploy the shared catalog into another entity's existing Foundry project. Run
-the commands from the repository root and replace values in angle brackets.
-
-### 1. Validate Local Prerequisites
-
-```powershell
-python --version
-az account show --query '{subscription:id, tenant:tenantId, user:user.name}' -o json
-azd version
-azd extension list
-
+git clone https://github.com/sibamoussa/citadel-toolbox-addon.git
+Set-Location citadel-toolbox-addon
+python -m venv .venv
+./.venv/Scripts/Activate.ps1
 python -m pip install -e '.[dev,mcp]'
 python -m pytest
 python -m ruff check .
 ```
 
-Install the Foundry extension if it is missing:
+### 2. Install the Foundry Extension
 
 ```powershell
 azd extension install microsoft.foundry
+azd auth login --tenant-id '<tenant-id>'
 ```
 
-Python 3.11 or newer is required. The Azure identity must exist in the tenant that owns the target
-subscription. A subscription administrator from another tenant cannot sign in to the project unless
-that identity is first added as an external user and granted the required RBAC role.
+Confirm the signed-in account is the intended deployment identity.
 
-### 2. Find the Target Foundry Project
+If a later command reports `AzureDeveloperCLICredential`, repeat `azd auth login` with the owning
+tenant ID. Azure CLI and Azure Developer CLI maintain separate sign-in sessions.
 
-List Foundry-capable resources and their child projects in the intended subscription:
+### 3. Select the Foundry Project
 
-```powershell
-$subscriptionId = '<subscription-id>'
+Copy the `AI Foundry API` endpoint from the project overview in the Foundry portal. It has this
+shape:
 
-az resource list `
-	--subscription $subscriptionId `
-	--resource-type Microsoft.CognitiveServices/accounts `
-	--query "[?kind=='AIServices'].{name:name, resourceGroup:resourceGroup, location:location, id:id}" `
-	-o table
-
-az resource list `
-	--subscription $subscriptionId `
-	--query "[?type=='Microsoft.CognitiveServices/accounts/projects'].{name:name, resourceGroup:resourceGroup, location:location, id:id}" `
-	-o table
+```text
+https://<account>.services.ai.azure.com/api/projects/<project>
 ```
 
-Retrieve the selected project and copy its `AI Foundry API` endpoint:
-
 ```powershell
-$projectResourceId = '<full-project-resource-id>'
-$project = az resource show --ids $projectResourceId --api-version 2025-06-01 | ConvertFrom-Json
-$projectEndpoint = $project.properties.endpoints.'AI Foundry API'
-$projectEndpoint
-```
-
-Confirm `provisioningState` is `Succeeded`. If multiple projects exist, select the target explicitly;
-do not infer it from the resource name.
-
-### 3. Authenticate `azd` to the Owning Tenant
-
-Use the tenant from `az account show` or the project identity metadata:
-
-```powershell
-$tenantId = '<tenant-id>'
-azd auth logout
-azd auth login --tenant-id $tenantId
-```
-
-Verify that the reported account is the intended deployment identity. Set the project context:
-
-```powershell
+$projectEndpoint = 'https://<account>.services.ai.azure.com/api/projects/<project>'
 $env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
 try {
-	azd ai project set $projectEndpoint
-	azd ai project show
+    azd ai project set $projectEndpoint
+    azd ai project show
+    azd ai connection list --project-endpoint $projectEndpoint
 }
 finally {
-	Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
+    Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
 }
 ```
 
-### 4. Inventory Project Connections
+Identify the Search and read-only MCP project connection names. Their full resource IDs end in
+`/connections/<connection-name>`.
 
-Toolboxes reference existing Foundry project connections; they do not store connection credentials.
-List non-secret connection metadata from the management plane:
+### 4. Initialize the Entity
 
-```powershell
-$connections = az rest `
-	--method get `
-	--url "https://management.azure.com$projectResourceId/connections?api-version=2025-06-01" |
-	ConvertFrom-Json
-
-$connections.value | ForEach-Object {
-	[pscustomobject]@{
-		Name = $_.name
-		Category = $_.properties.category
-		Authentication = $_.properties.authType
-		Target = $_.properties.target
-		ResourceId = $_.id
-	}
-} | Format-Table -AutoSize
-```
-
-For the initial read-only profile, identify:
-
-- One `CognitiveSearch` connection and an existing semantic Search index.
-- One `RemoteTool` connection to a read-only MCP server.
-- Approved public domains for built-in web search.
-
-Use the Foundry portal or an identity with `Search Index Data Reader` to list indexes. Do not store
-Search admin keys, API keys, OAuth tokens, or connection secrets in this repository.
-
-### 5. Create and Configure the Entity Overlay
+Use lowercase letters, numbers, and hyphens for the entity name.
 
 ```powershell
-$entity = '<entity-name>'
-python -m citadel_toolbox.cli init-entity $entity --display-name '<Entity Display Name>'
+$entity = 'contoso'
+python -m citadel_toolbox.cli init-entity $entity --display-name 'Contoso'
 ```
 
-Edit `entities/<entity-name>/overlay.yaml`. Keep project-specific values here rather than changing
-`catalog/core.yaml`:
+This creates `entities/contoso/overlay.yaml` and `entities/contoso/.env.example`. Keep customer
+settings in this directory; do not edit `catalog/core.yaml` for one customer.
 
-```yaml
-metadata:
-	name: <entity-name>-toolbox
-	description: Shared Citadel capabilities customized for <Entity Display Name>.
-
-tools:
-	- id: enterprise-knowledge
-		provider:
-			project_connection_id: <full-search-connection-resource-id>
-			index_name: <search-index-name>
-
-	- id: employee-context
-		enabled: false
-
-	- id: government-systems
-		provider:
-			server_label: <entity-name>-systems
-			server_url: https://<read-only-mcp-host>/mcp
-			project_connection_id: <full-mcp-connection-resource-id>
-
-	- id: approved-web-search
-		provider:
-			filters:
-				allowed_domains:
-					- <approved-domain.example>
-
-	- id: workflow-actions
-		enabled: false
-
-skills:
-	- id: government-service-routing
-		configuration:
-			entity_name: <Entity Display Name>
-			preferred_language: en
-```
-
-Start read-only. Enable Work IQ only after delegated-user consent and network compatibility are
-confirmed. Enable action tools only when the consuming runtime enforces explicit approval.
-
-### 6. Build and Review Before Publishing
-
-Use an unresolved build while preparing connections, then require a strict build before publication:
+### 5. Configure the Entity
 
 ```powershell
-./scripts/Build-Toolbox.ps1 -Entity $entity -AllowUnresolved
-Get-Content "./generated/$entity/toolbox.yaml"
+Copy-Item "entities/$entity/.env.example" "entities/$entity/.env"
+```
 
+Edit the new `.env` and replace every angle-bracket value:
+
+```dotenv
+CONTOSO_SEARCH_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<search-connection>
+CONTOSO_SEARCH_INDEX_NAME=<existing-index-name>
+CONTOSO_GOVERNMENT_SYSTEMS_MCP_URL=https://<read-mcp-host>/mcp
+CONTOSO_GOVERNMENT_SYSTEMS_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<read-mcp-connection>
+```
+
+Edit `entities/contoso/overlay.yaml` to set approved domains, the Search entity filter, names, and
+descriptions. Leave Work IQ and workflow actions disabled for the first deployment.
+
+The `.env` file is ignored by Git. It should contain resource references and URLs, never API keys,
+tokens, passwords, or connection secrets.
+
+### 6. Run the Strict Build
+
+```powershell
 ./scripts/Build-Toolbox.ps1 -Entity $entity
+Get-Content "generated/$entity/toolbox.yaml"
 ```
 
-The generated Foundry file must place Search and MCP references under `connections`, built-in tools
-under `tools`, and reusable skill references under `skills`. Confirm it contains no credentials and
-that disabled Work IQ and action providers are absent.
+Strict compilation rejects missing variables, empty values, unchanged `<placeholder>` values,
+missing connection fields, missing skill files, and unsafe write-tool approval settings.
 
-### 7. Upload the Core Skills
+Review the generated file. Search and MCP providers must be under `connections`; built-in providers
+must be under `tools`; skills must be under `skills`. The file must not contain credentials.
 
-Skills must exist in the same Foundry project before the Toolbox references them. For a new project:
+### 7. Publish the First Version
 
 ```powershell
-$env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
-try {
-	azd ai skill create enterprise-grounding `
-		--file ./skills/enterprise-grounding/SKILL.md `
-		--project-endpoint $projectEndpoint --no-prompt
-
-	azd ai skill create government-service-routing `
-		--file ./skills/government-service-routing/SKILL.md `
-		--project-endpoint $projectEndpoint --no-prompt
-
-	azd ai skill create safe-transaction `
-		--file ./skills/safe-transaction/SKILL.md `
-		--project-endpoint $projectEndpoint --no-prompt
-
-	azd ai skill list --project-endpoint $projectEndpoint --output json --no-prompt
-}
-finally {
-	Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
-}
+./scripts/Publish-Toolbox.ps1 `
+    -Entity $entity `
+    -ProjectEndpoint $projectEndpoint `
+    -ToolboxName "$entity-toolbox"
 ```
 
-If a skill already exists, use `azd ai skill update <name> --file <path>` to create a new immutable
-default version instead of deleting it.
+The script strictly rebuilds the definition, selects the project, creates missing core skills,
+reuses existing skills, checks for a Toolbox name collision, and creates version 1. Version 1
+becomes the default automatically. Use `-UpdateSkills` only when intentionally publishing new skill
+versions.
 
-### 8. Create the Toolbox Version
+### 8. Validate the Deployment
 
 ```powershell
 $toolboxName = "$entity-toolbox"
-
-./scripts/Publish-Toolbox.ps1 `
-	-Entity $entity `
-	-ProjectEndpoint $projectEndpoint `
-	-ToolboxName $toolboxName
-```
-
-The first successful version becomes the default automatically. The command prints a version-specific
-endpoint for validation and a stable consumer endpoint for agents.
-
-### 9. Verify the Cloud Definition and MCP Endpoint
-
-Inspect the deployed definition:
-
-```powershell
 $env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
 try {
-	azd ai toolbox show $toolboxName `
-		--project-endpoint $projectEndpoint `
-		--output json --no-prompt
+    azd ai toolbox show $toolboxName `
+        --project-endpoint $projectEndpoint --output json --no-prompt
+    azd ai toolbox versions list $toolboxName `
+        --project-endpoint $projectEndpoint --output table --no-prompt
 }
 finally {
-	Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
+    Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
 }
 ```
 
-Check the immutable version endpoint with an MCP initialization request:
+Test the version-specific MCP endpoint reported by the CLI before connecting agents. Confirm Search
+returns expected citations, web search stays within approved domains, `resources/list` discovers the
+skills, the read MCP enforces identity and authorization, and no state-changing operation is
+available.
 
-```powershell
-$version = '<created-version>'
-$versionEndpoint = "$projectEndpoint/toolboxes/$toolboxName/versions/$version/mcp?api-version=v1"
-$token = az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv
+### 9. Connect an Agent
 
-try {
-	$headers = @{
-		Authorization = "Bearer $token"
-		Accept = 'application/json, text/event-stream'
-	}
-	$body = @{
-		jsonrpc = '2.0'
-		id = 1
-		method = 'initialize'
-		params = @{
-			protocolVersion = '2025-03-26'
-			capabilities = @{}
-			clientInfo = @{ name = 'citadel-toolbox-validation'; version = '1.0' }
-		}
-	} | ConvertTo-Json -Depth 8
-
-	Invoke-WebRequest `
-		-Method Post -Uri $versionEndpoint -Headers $headers `
-		-ContentType 'application/json' -Body $body
-}
-finally {
-	$token = $null
-	$headers = $null
-}
-```
-
-Expect HTTP `200` and an MCP initialization result. Then test Search citations, MCP authorization,
-web-domain restrictions, skill resources, and the absence of write operations.
-
-### 10. Promote Later Versions
-
-Creating later immutable versions does not change the version used by consumers. Promote only after
-version-specific validation:
-
-```powershell
-$env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
-try {
-	azd ai toolbox publish $toolboxName <validated-version> `
-		--project-endpoint $projectEndpoint --no-prompt
-}
-finally {
-	Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
-}
-```
-
-Configure agents with the stable consumer endpoint:
+Use the stable endpoint only after validation:
 
 ```text
 {project-endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1
 ```
 
+Python hosted agents use Agent Framework `FoundryToolbox`; .NET hosted agents use
+`AddFoundryToolboxes`; prompt agents attach the endpoint as a remote MCP tool. The client must
+support MCP Resources to discover attached skills.
+
+### 10. Operate Versions
+
+Foundry Toolbox versions are immutable. The publish script creates the first version only. For an
+existing Toolbox, use the installed `azd ai toolbox connection add/remove` and
+`azd ai toolbox skill add/remove` commands to branch a new version, then test its version-specific
+endpoint. Run each command with `--help` because available provider options follow the installed
+`microsoft.foundry` extension version.
+
+Promote a validated version:
+
+```powershell
+$env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
+try {
+    azd ai toolbox publish $toolboxName '<new-version>' `
+        --project-endpoint $projectEndpoint --no-prompt
+}
+finally {
+    Remove-Item Env:AZURE_DEV_USER_AGENT -ErrorAction SilentlyContinue
+}
+```
+
+Rollback uses the same command with the last known-good version. List available versions first:
+
+```powershell
+azd ai toolbox versions list $toolboxName `
+    --project-endpoint $projectEndpoint --output table --no-prompt
+azd ai toolbox publish $toolboxName '<known-good-version>' `
+    --project-endpoint $projectEndpoint --no-prompt
+```
+
+## Local MCP Reference Server
+
+The included in-memory MCP service is a development adapter, not a production backend. Read and
+action profiles are deliberately separate:
+
+```powershell
+python -m citadel_toolbox_mcp.server --profile read --transport streamable-http
+python -m citadel_toolbox_mcp.server --profile actions --transport streamable-http
+```
+
+The VS Code development configuration in `.vscode/mcp.json` starts the read profile over stdio.
+Replace `GovernmentService` with an authenticated entity backend before production deployment.
+
 ## Production Guardrails
 
 - Store credentials only in Foundry project connections or an approved secret store.
-- Use separate read and action MCP services, connections, and identities.
-- Enforce approval in the consuming runtime; Toolbox metadata alone does not block a tool call.
-- Test immutable version endpoints before promoting the default version.
-- Treat Work IQ, Toolbox Search, and attached skills according to their current preview terms.
+- Use separate read and action MCP deployments, connections, and managed identities.
+- Enforce approval in the consuming runtime; metadata alone does not block a call.
+- Test immutable version endpoints before changing the default version.
+- Keep Work IQ disabled unless delegated-user consent and network constraints are satisfied.
+- Treat generated Toolbox definitions as disposable build artifacts.
+
+See [entity onboarding](docs/entity-onboarding.md), the generic
+[Microsoft example](docs/microsoft-entity-example.md), and [architecture](docs/architecture.md) for
+additional context.

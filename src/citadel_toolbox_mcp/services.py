@@ -23,7 +23,7 @@ class ServiceRequest:
 
 
 class GovernmentService:
-    """Reference adapter that entities replace with their system integrations."""
+    """In-memory demonstration adapter; replace it before any production deployment."""
 
     def __init__(self) -> None:
         self._applications = {

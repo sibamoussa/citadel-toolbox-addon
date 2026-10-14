@@ -75,12 +75,35 @@ def test_missing_variable_is_rejected() -> None:
         substitute_variables(core_bundle(), {})
 
 
+def test_empty_variable_is_rejected() -> None:
+    with pytest.raises(ConfigurationError, match="SEARCH_INDEX"):
+        substitute_variables(
+            core_bundle(), {"SEARCH_INDEX": "", "MCP_URL": "https://mcp.example"}
+        )
+
+
+def test_template_value_is_rejected_in_strict_mode() -> None:
+    with pytest.raises(ConfigurationError, match="<index-name>"):
+        substitute_variables(
+            core_bundle(),
+            {"SEARCH_INDEX": "<index-name>", "MCP_URL": "https://mcp.example"},
+        )
+
+
 def test_write_tool_without_approval_is_rejected() -> None:
     bundle = core_bundle()
     bundle["tools"][1]["enabled"] = True
     bundle["tools"][1].pop("require_approval")
 
     with pytest.raises(ConfigurationError, match="require_approval: always"):
+        validate_bundle(bundle)
+
+
+def test_connection_tool_requires_provider_fields() -> None:
+    bundle = core_bundle()
+    bundle["tools"][0]["provider"].pop("project_connection_id")
+
+    with pytest.raises(ConfigurationError, match="project_connection_id"):
         validate_bundle(bundle)
 
 

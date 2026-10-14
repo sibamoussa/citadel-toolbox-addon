@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("name", help="Lowercase entity folder name.")
     init_parser.add_argument("--display-name", required=True)
     init_parser.add_argument("--entities-dir", type=Path, default=Path("entities"))
+    init_parser.add_argument(
+        "--template-dir",
+        type=Path,
+        help="Template directory (defaults to <entities-dir>/example).",
+    )
     return parser
 
 
@@ -50,8 +55,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "init-entity":
         if not args.name.replace("-", "").isalnum() or args.name.lower() != args.name:
             parser.error("Entity name must contain lowercase letters, numbers, and hyphens")
-        source = args.entities_dir / "example"
+        source = args.template_dir or args.entities_dir / "example"
         target = args.entities_dir / args.name
+        if not source.is_dir():
+            parser.error(f"Entity template not found: {source}")
         if target.exists():
             parser.error(f"Entity already exists: {target}")
         shutil.copytree(source, target)

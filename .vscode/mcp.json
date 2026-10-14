@@ -5,9 +5,11 @@
       "command": "python",
       "args": [
         "-m",
-        "mcp",
-        "run",
-        "${workspaceFolder}/src/citadel_toolbox_mcp/server.py"
+        "citadel_toolbox_mcp.server",
+        "--profile",
+        "read",
+        "--transport",
+        "stdio"
       ]
     }
   }
