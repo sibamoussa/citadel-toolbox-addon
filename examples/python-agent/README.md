@@ -42,5 +42,19 @@ You can also start the server directly:
 ./examples/python-agent/.venv/Scripts/python.exe ./examples/python-agent/main.py
 ```
 
+## Browser Demo
+
+After the agent server is listening on port 8088, start the standalone demo UI from the repository
+root in a second terminal:
+
+```powershell
+./examples/python-agent/.venv/Scripts/python.exe ./examples/python-agent/demo-ui/server.py
+```
+
+Open `http://127.0.0.1:8090`. The local UI server serves the static chat interface and proxies only
+readiness and Responses API requests to the agent, so Foundry credentials and Toolbox endpoints are
+never sent to the browser. Conversation context remains in the browser and agent requests use
+`store: false`.
+
 The code does not contain service credentials. `DefaultAzureCredential` uses the signed-in developer
 identity locally and the assigned workload identity when hosted.

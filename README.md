@@ -16,6 +16,14 @@ authenticated, MCP-compatible endpoint. An agent connects to that one URL, disco
 tools at runtime, and invokes the appropriate tool. Operators can version and update the Toolbox
 without changing each consuming agent.
 
+### How Citadel Uses the Toolbox
+
+A Foundry Toolbox groups multiple tools and exposes them through one MCP endpoint. Citadel governs
+access to that endpoint through Azure API Management (APIM) access contracts. Those contracts
+control authentication, permitted tools, rate limits, subscriptions, logging, and backend
+isolation. Agents therefore consume a stable Citadel-governed interface while Foundry manages tool
+discovery and invocation behind it.
+
 The important terms are:
 
 | Term | Meaning in this project |
@@ -56,7 +64,8 @@ flowchart LR
      Generated --> Publish
      Publish --> Foundry[Managed Foundry Toolbox]
      Connections[Foundry project connections] --> Foundry
-     Agent[Agent code] -->|one MCP endpoint| Foundry
+        Agent[Agent code] --> APIM[Citadel APIM access contract]
+        APIM -->|one governed MCP endpoint| Foundry
      Foundry --> Search[Azure AI Search]
      Foundry --> MCP[Entity MCP service]
      Foundry --> Web[Approved web search]

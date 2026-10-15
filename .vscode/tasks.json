@@ -79,6 +79,30 @@
       "dependsOn": ["Citadel Toolbox: Run agent example"]
     },
     {
+      "label": "Citadel Toolbox: Run browser demo",
+      "type": "shell",
+      "command": "${workspaceFolder}/examples/python-agent/.venv/Scripts/python.exe",
+      "args": ["${workspaceFolder}/examples/python-agent/demo-ui/server.py"],
+      "isBackground": true,
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": ["Citadel Toolbox: Run agent example"],
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": "^.*$",
+            "file": 0,
+            "location": 1,
+            "message": 2
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Citadel Toolbox demo:"
+        }
+      }
+    },
+    {
       "label": "Citadel Toolbox: Terminate agent example",
       "type": "shell",
       "command": "echo ${input:terminateAgentExample}",

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Browser demo for the Citadel Microsoft Foundry Toolbox.">
+    <title>Citadel Toolbox Demo</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="identity">
+          <span class="mark" aria-hidden="true">C</span>
+          <div>
+            <strong>Citadel Toolbox</strong>
+            <span>Government services demo</span>
+          </div>
+        </div>
+        <div class="connection" aria-live="polite">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Checking agent</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="capability-panel">
+          <p class="eyebrow">Active profile</p>
+          <h1>Trusted answers.<br>Controlled actions.</h1>
+          <p class="summary">
+            One governed endpoint for enterprise knowledge, approved web sources, and public-service routing.
+          </p>
+
+          <div class="capabilities" aria-label="Available capabilities">
+            <div class="capability">
+              <span class="capability-index">01</span>
+              <div><strong>Enterprise grounding</strong><span>Private policy index with citations</span></div>
+            </div>
+            <div class="capability">
+              <span class="capability-index">02</span>
+              <div><strong>Approved web search</strong><span>Microsoft domains only</span></div>
+            </div>
+            <div class="capability">
+              <span class="capability-index">03</span>
+              <div><strong>Service routing</strong><span>Read-only government systems</span></div>
+            </div>
+          </div>
+
+          <div class="safety-note">
+            <span>READ ONLY</span>
+            <p>State-changing tools are disabled in this demo profile.</p>
+          </div>
+        </aside>
+
+        <section class="chat-panel" aria-label="Toolbox assistant">
+          <div class="chat-heading">
+            <div>
+              <p class="eyebrow">Live session</p>
+              <h2>Ask the toolbox</h2>
+            </div>
+            <button class="reset-button" id="reset-button" type="button">New session</button>
+          </div>
+
+          <div class="messages" id="messages" aria-live="polite">
+            <article class="message assistant-message">
+              <div class="message-label">Citadel</div>
+              <div class="message-body">
+                I can find grounded policy, search approved public sources, and route service questions. What do you need?
+              </div>
+            </article>
+            <div class="suggestions" id="suggestions">
+              <button type="button">What tools and skills can you use?</button>
+              <button type="button">Find a relevant government service and explain the next step.</button>
+              <button type="button">Search approved sources for current AI governance guidance.</button>
+            </div>
+          </div>
+
+          <form class="composer" id="composer">
+            <label class="sr-only" for="prompt">Message the Citadel assistant</label>
+            <textarea id="prompt" rows="1" placeholder="Ask a policy or service question" required></textarea>
+            <button class="send-button" id="send-button" type="submit">Send</button>
+          </form>
+          <p class="composer-note">Responses may use enterprise data and approved public sources.</p>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
