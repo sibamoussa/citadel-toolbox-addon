@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Citadel Toolbox Agent Example",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5679
+      },
+      "preLaunchTask": "Citadel Toolbox: Open Agent Inspector",
+      "internalConsoleOptions": "neverOpen",
+      "postDebugTask": "Citadel Toolbox: Terminate agent example"
+    }
+  ]
+}

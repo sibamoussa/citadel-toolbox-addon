@@ -133,6 +133,25 @@ Python hosted agents use Agent Framework `FoundryToolbox`; .NET hosted agents us
 `AddFoundryToolboxes`; prompt agents attach the endpoint as a remote MCP tool. The client must
 support MCP Resources to discover attached skills.
 
+### Python Agent Framework Example
+
+The runnable [Python agent example](examples/python-agent/README.md) attaches the Toolbox in code:
+
+```python
+credential = DefaultAzureCredential()
+toolbox = FoundryToolbox(credential)
+client = FoundryChatClient(
+    project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+    model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+    credential=credential,
+)
+agent = Agent(client=client, tools=toolbox, default_options={"store": False})
+```
+
+Set `TOOLBOX_ENDPOINT` to the stable endpoint above. Run
+`./examples/python-agent/Setup.ps1`, replace the placeholders in the generated `.env`, and press
+**F5** in VS Code to test the agent in Foundry Toolkit Agent Inspector.
+
 ## Operate Versions
 
 Foundry Toolbox versions are immutable. The publish script creates the first version only. For an

@@ -85,6 +85,10 @@ skill discovery, and the absence of write tools. Agents may then use:
 {project-endpoint}/toolboxes/microsoft-toolbox/mcp?api-version=v1
 ```
 
+To consume this endpoint from code, follow the runnable
+[Python Agent Framework example](../examples/python-agent/README.md). Set `TOOLBOX_ENDPOINT` to the
+URL above, configure the project endpoint and model deployment, then press **F5** in VS Code.
+
 ## Optional Changes
 
 To enable Work IQ, create its project connection, add an entity variable and overlay override, and

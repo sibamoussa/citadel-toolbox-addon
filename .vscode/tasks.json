@@ -34,6 +34,69 @@
       "command": "${workspaceFolder}/scripts/Build-Toolbox.ps1",
       "args": ["-Entity", "example", "-AllowUnresolved"],
       "problemMatcher": []
+    },
+    {
+      "label": "Citadel Toolbox: Validate agent example prerequisites",
+      "type": "aitk",
+      "command": "debug-check-prerequisites",
+      "args": { "portOccupancy": [5679, 8088] }
+    },
+    {
+      "label": "Citadel Toolbox: Run agent example",
+      "type": "shell",
+      "command": "${workspaceFolder}/examples/python-agent/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "debugpy",
+        "--listen",
+        "127.0.0.1:5679",
+        "${workspaceFolder}/examples/python-agent/main.py"
+      ],
+      "isBackground": true,
+      "options": { "cwd": "${workspaceFolder}/examples/python-agent" },
+      "dependsOn": ["Citadel Toolbox: Validate agent example prerequisites"],
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": "^.*$",
+            "file": 0,
+            "location": 1,
+            "message": 2
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Application startup complete|[Rr]unning on|Started server process"
+        }
+      }
+    },
+    {
+      "label": "Citadel Toolbox: Open Agent Inspector",
+      "type": "shell",
+      "command": "echo '${input:openAgentInspector}'",
+      "presentation": { "reveal": "never" },
+      "dependsOn": ["Citadel Toolbox: Run agent example"]
+    },
+    {
+      "label": "Citadel Toolbox: Terminate agent example",
+      "type": "shell",
+      "command": "echo ${input:terminateAgentExample}",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "openAgentInspector",
+      "type": "command",
+      "command": "ai-mlstudio.openTestTool",
+      "args": { "triggeredFrom": "tasks", "port": 8088 }
+    },
+    {
+      "id": "terminateAgentExample",
+      "type": "command",
+      "command": "workbench.action.tasks.terminate",
+      "args": "terminateAll"
     }
   ]
 }
