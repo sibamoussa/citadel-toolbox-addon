@@ -4,6 +4,68 @@ A reusable Microsoft Foundry Toolbox add-on for Citadel deployments. A governed 
 approved tools and skills; each customer supplies only an entity overlay and Foundry connection
 references. Customers do not fork the catalog or store credentials in this repository.
 
+## Start Here: What Is a Toolbox?
+
+An AI agent can answer with a model, but it needs **tools** to retrieve private knowledge, search the
+web, or call business systems. Connecting every agent separately to every service duplicates code,
+credentials, and security decisions.
+
+A [Microsoft Foundry Toolbox](https://learn.microsoft.com/azure/foundry/agents/concepts/toolbox-overview)
+is a managed collection of those capabilities. Foundry exposes the collection through one
+authenticated, MCP-compatible endpoint. An agent connects to that one URL, discovers the available
+tools at runtime, and invokes the appropriate tool. Operators can version and update the Toolbox
+without changing each consuming agent.
+
+The important terms are:
+
+| Term | Meaning in this project |
+| --- | --- |
+| Agent | Application code that sends a prompt to a model and allows the model to call tools. |
+| Tool | Something the agent can call, such as Azure AI Search, web search, or an MCP operation. |
+| Skill | Reusable instructions describing how to perform a task. Foundry skills are currently preview and are exposed as MCP resources. |
+| MCP | Model Context Protocol, the protocol used by agents to discover and invoke Toolbox capabilities. |
+| Project connection | A Foundry resource that stores a downstream endpoint and authentication configuration. The Toolbox references it by name; this repository does not store its credentials. |
+| Toolbox version | An immutable snapshot of the Toolbox configuration. The first version is the default. Later versions are tested and explicitly promoted. |
+| Consumer endpoint | The stable MCP URL used by agents. It always serves the Toolbox's current default version. |
+
+### What This Repository Adds
+
+Foundry provides the managed Toolbox service. This repository adds a repeatable governance and
+deployment layer for Citadel:
+
+1. The platform team defines the reusable capabilities and safety defaults once in
+    [`catalog/core.yaml`](catalog/core.yaml).
+2. Each entity changes only its own [`entities/<entity>/overlay.yaml`](entities/example/overlay.yaml),
+    such as connection references, an index name, and approved web domains.
+3. The Python compiler in [`src/citadel_toolbox/compiler.py`](src/citadel_toolbox/compiler.py) merges
+    the two files, resolves local environment variables, removes disabled entries, validates safety
+    rules, and renders the YAML format accepted by Foundry.
+4. [`scripts/Publish-Toolbox.ps1`](scripts/Publish-Toolbox.ps1) uploads the local `SKILL.md` files and
+    calls `azd ai toolbox create --from-file` to create the managed Toolbox in the selected Foundry
+    project.
+5. Agents connect to the resulting endpoint. They do not import this compiler or receive downstream
+    service credentials.
+
+```mermaid
+flowchart LR
+     Core[Core catalog] --> Compiler[Citadel compiler]
+     Overlay[Entity overlay] --> Compiler
+     Env[Local non-secret references] --> Compiler
+     Compiler --> Generated[generated/entity/toolbox.yaml]
+     Skills[skills/*/SKILL.md] --> Publish[Publish script]
+     Generated --> Publish
+     Publish --> Foundry[Managed Foundry Toolbox]
+     Connections[Foundry project connections] --> Foundry
+     Agent[Agent code] -->|one MCP endpoint| Foundry
+     Foundry --> Search[Azure AI Search]
+     Foundry --> MCP[Entity MCP service]
+     Foundry --> Web[Approved web search]
+```
+
+This repository does **not** create the Foundry project, model deployment, Search index, entity MCP
+backend, or project connections. Those resources must already exist. It creates the governed
+Toolbox definition that joins them and publishes that definition to Foundry.
+
 ## What Is Included
 
 | Capability | Provider | Default |
@@ -17,6 +79,56 @@ references. Customers do not fork the catalog or store credentials in this repos
 
 Three reusable Foundry skills are provisioned by the publish script: enterprise grounding,
 government service routing, and safe transactions.
+
+## How the Toolbox Is Built
+
+For the example entity, the build has three inputs:
+
+- [`catalog/core.yaml`](catalog/core.yaml) supplies the complete approved catalog and defaults.
+- [`entities/example/overlay.yaml`](entities/example/overlay.yaml) overrides only entity-owned
+    values. Items merge by stable `id`, so the entity does not copy the core catalog.
+- `entities/example/.env` supplies local connection resource IDs and endpoint values. It is ignored
+    by Git and is used only while compiling.
+
+`Build-Toolbox.ps1` loads those values and runs the compiler. Strict compilation fails when a value
+is missing, a placeholder remains, a required connection field is absent, a referenced skill file
+does not exist, or a write-capable tool lacks `require_approval: always`.
+
+The disposable output is `generated/example/toolbox.yaml`. For the example configuration it has the
+following Foundry-facing shape:
+
+```yaml
+description: Shared Citadel capabilities customized for Example Entity.
+connections:
+    - name: search
+        index: policy-index
+    - name: read-mcp
+tools:
+    - type: web_search
+        filters:
+            allowed_domains: [example.gov, legislation.example.gov]
+        require_approval: never
+        name: approved-web-search
+    - type: toolbox_search
+skills:
+    - name: enterprise-grounding
+    - name: government-service-routing
+    - name: safe-transaction
+```
+
+The `connections` names refer to existing Foundry project connections. Their keys, tokens, and
+identity configuration remain in Foundry. The `toolbox_search` entry lets the model discover relevant
+tools on demand instead of placing every tool definition in every prompt. Skill entries refer to
+versioned skills that the publish script creates in the same Foundry project.
+
+During publication, the script performs these operations in order:
+
+1. Rebuild and strictly validate the generated YAML.
+2. Select the target Foundry project.
+3. Create missing skills from the repository's `skills/*/SKILL.md` files, or reuse existing skills.
+4. Refuse to overwrite an existing Toolbox name through the first-version workflow.
+5. Create Toolbox version 1 from the generated YAML. Foundry makes this first version the default.
+6. Print the stable consumer endpoint for agent applications.
 
 ## Prerequisites
 
@@ -133,9 +245,26 @@ Python hosted agents use Agent Framework `FoundryToolbox`; .NET hosted agents us
 `AddFoundryToolboxes`; prompt agents attach the endpoint as a remote MCP tool. The client must
 support MCP Resources to discover attached skills.
 
-### Python Agent Framework Example
+### How the Python Example Uses the Toolbox
 
-The runnable [Python agent example](examples/python-agent/README.md) attaches the Toolbox in code:
+The runnable [Python agent example](examples/python-agent/README.md) is a separate consumer of the
+published Toolbox. It does not build or publish the Toolbox. Its `.env` contains only:
+
+```dotenv
+FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
+AZURE_AI_MODEL_DEPLOYMENT_NAME=<model-deployment-name>
+TOOLBOX_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox-name>/mcp?api-version=v1
+```
+
+[`examples/python-agent/main.py`](examples/python-agent/main.py) then performs four jobs:
+
+1. `DefaultAzureCredential` obtains the caller's Microsoft Entra identity. No tool credential is
+    embedded in the code.
+2. `FoundryChatClient` connects the agent to the selected model deployment.
+3. `FoundryToolbox` reads `TOOLBOX_ENDPOINT`, authenticates MCP requests, discovers callable tools,
+    and forwards tool calls to Foundry.
+4. `Agent(..., tools=toolbox)` gives the model those capabilities, while `ResponsesHostServer`
+    exposes the agent through the Foundry Responses hosting protocol.
 
 ```python
 credential = DefaultAzureCredential()
@@ -147,6 +276,35 @@ client = FoundryChatClient(
 )
 agent = Agent(client=client, tools=toolbox, default_options={"store": False})
 ```
+
+For a prompt that requires private policy information, the runtime flow is:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Model
+    participant Toolbox as Foundry Toolbox
+    participant Search as Azure AI Search
+    User->>Agent: Ask a policy question
+    Agent->>Model: Prompt plus available Toolbox tools
+    Model->>Toolbox: Discover or call the relevant tool
+    Toolbox->>Search: Use the configured project connection
+    Search-->>Toolbox: Grounded documents and citations
+    Toolbox-->>Model: Tool result
+    Model-->>Agent: Grounded answer
+    Agent-->>User: Answer with citations
+```
+
+The example targets the default read-only Toolbox. Tool approval metadata is returned to the client,
+but the Toolbox endpoint does not enforce approval by itself. Before enabling state-changing tools,
+the consuming runtime must pause the exact pending call, show its arguments, and require explicit
+user approval. A system prompt is not an enforcement mechanism.
+
+Tools are discovered through MCP tools. Attached Foundry skills are exposed separately as MCP
+resources and require a client integration that supports MCP Resources and skill loading. The sample
+demonstrates the callable-tool path; do not assume that merely constructing `FoundryToolbox` injects
+every attached skill into the model's instructions.
 
 Set `TOOLBOX_ENDPOINT` to the stable endpoint above. Run
 `./examples/python-agent/Setup.ps1`, replace the placeholders in the generated `.env`, and press
@@ -207,3 +365,14 @@ Replace `GovernmentService` with an authenticated entity backend before producti
 See [entity onboarding](docs/entity-onboarding.md), the generic
 [Microsoft example](docs/microsoft-entity-example.md), and [architecture](docs/architecture.md) for
 additional context.
+
+## Microsoft Reference Documentation
+
+- [What is Toolbox in Microsoft Foundry?](https://learn.microsoft.com/azure/foundry/agents/concepts/toolbox-overview)
+- [Create and manage a Toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox)
+- [Toolbox and hosted-agent integration](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/use-toolbox-hosted-agent)
+- [Toolbox end-to-end quickstart](https://learn.microsoft.com/azure/foundry/agents/quickstarts/quickstart-toolbox-agent)
+- [Use skills with Foundry agents](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills)
+- [Enable tool search in a Toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/tool-search)
+- [Microsoft Agent Framework overview](https://learn.microsoft.com/agent-framework/overview/agent-framework-overview)
+- [Model Context Protocol overview](https://modelcontextprotocol.io/docs/getting-started/intro)
