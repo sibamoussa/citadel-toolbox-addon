@@ -18,11 +18,11 @@ without changing each consuming agent.
 
 ### How Citadel Uses the Toolbox
 
-A Foundry Toolbox groups multiple tools and exposes them through one MCP endpoint. Citadel governs
-access to that endpoint through Azure API Management (APIM) access contracts. Those contracts
-control authentication, permitted tools, rate limits, subscriptions, logging, and backend
-isolation. Agents therefore consume a stable Citadel-governed interface while Foundry manages tool
-discovery and invocation behind it.
+A Foundry Toolbox groups multiple tools and exposes them through one MCP backend endpoint. Citadel
+places Azure API Management (APIM) in front of that endpoint and applies access contracts for
+authentication, permitted tools, rate limits, subscriptions, logging, and backend isolation. Agents
+call the stable Citadel-governed MCP endpoint exposed by APIM; the Foundry Toolbox endpoint remains
+behind APIM and manages tool discovery and invocation.
 
 The important terms are:
 
@@ -34,7 +34,7 @@ The important terms are:
 | MCP | Model Context Protocol, the protocol used by agents to discover and invoke Toolbox capabilities. |
 | Project connection | A Foundry resource that stores a downstream endpoint and authentication configuration. The Toolbox references it by name; this repository does not store its credentials. |
 | Toolbox version | An immutable snapshot of the Toolbox configuration. The first version is the default. Later versions are tested and explicitly promoted. |
-| Consumer endpoint | The stable MCP URL used by agents. It always serves the Toolbox's current default version. |
+| Consumer endpoint | The stable Foundry MCP backend URL protected by APIM. It always serves the Toolbox's current default version. |
 
 ### What This Repository Adds
 
@@ -51,8 +51,8 @@ deployment layer for Citadel:
 4. [`scripts/Publish-Toolbox.ps1`](scripts/Publish-Toolbox.ps1) uploads the local `SKILL.md` files and
     calls `azd ai toolbox create --from-file` to create the managed Toolbox in the selected Foundry
     project.
-5. Agents connect to the resulting endpoint. They do not import this compiler or receive downstream
-    service credentials.
+5. APIM protects the resulting backend endpoint, and agents connect through the Citadel-governed
+    endpoint exposed by APIM. Agents do not import this compiler or receive downstream credentials.
 
 ```mermaid
 flowchart LR
@@ -64,8 +64,8 @@ flowchart LR
      Generated --> Publish
      Publish --> Foundry[Managed Foundry Toolbox]
      Connections[Foundry project connections] --> Foundry
-        Agent[Agent code] --> APIM[Citadel APIM access contract]
-        APIM -->|one governed MCP endpoint| Foundry
+      Agent[Agent code] -->|one governed MCP endpoint| APIM[Citadel APIM access contract]
+      APIM -->|protected backend MCP endpoint| Foundry
      Foundry --> Search[Azure AI Search]
      Foundry --> MCP[Entity MCP service]
      Foundry --> Web[Approved web search]
