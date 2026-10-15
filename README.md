@@ -86,8 +86,91 @@ Toolbox definition that joins them and publishes that definition to Foundry.
 | Employee and M365 context | Work IQ preview | Disabled |
 | Workflow actions | Approval-gated MCP | Disabled |
 
-Three reusable Foundry skills are provisioned by the publish script: enterprise grounding,
-government service routing, and safe transactions.
+### Enterprise Knowledge
+
+Enterprise Knowledge connects the Toolbox to an existing Azure AI Search index through a Foundry
+project connection. It is intended for private policies, procedures, regulations, and organizational
+guidance. The core catalog requests vector, semantic, and keyword hybrid retrieval and returns up to
+five grounded results. Entity overlays select the index and can add an entity-specific filter. The
+agent should cite the returned document title and source identifier and must not invent an answer
+when the index does not contain sufficient evidence.
+
+This repository does not create or populate the Search index. Foundry holds the Search connection,
+and Citadel/APIM controls which agents may reach the governed Toolbox endpoint.
+
+### Government Systems
+
+Government Systems is a read-only MCP connection for entity records such as applications, cases,
+accounts, and transaction status. Foundry connects to the entity's MCP server using the configured
+project connection; tools discovered from that server are searchable using terms such as cases,
+applications, CRM, ERP, HR, and finance.
+
+The included reference MCP server exposes only
+`get_application_status(application_id)`. It returns sample in-memory data and does not connect to a
+real government system. For production, each entity replaces that adapter with an authenticated,
+authorized integration to its case-management, CRM, ERP, or other system of record. The production
+path is:
+
+```text
+Agent -> Citadel APIM -> Foundry Toolbox -> read-only entity MCP -> system of record
+```
+
+### Approved Public Information
+
+Approved Public Information uses Foundry Web Search with an allowlist supplied by the entity
+overlay. For example, an entity can restrict results to its official government and legislation
+domains. It is intended for current public regulations and information that is not available in the
+private knowledge index. Personal, confidential, or internal information must never be included in
+a web-search query.
+
+### Tool Discovery
+
+Tool Discovery uses Foundry `toolbox_search`. It is a meta-tool rather than a business-system
+integration: it searches the tools available inside the Toolbox and reveals the relevant tool to
+the model when needed. This avoids placing every tool definition into every prompt. For example, a
+request for an application status can discover a Government Systems tool, while a policy question
+can discover Enterprise Knowledge. Tool Discovery does not bypass APIM policy, Foundry connection
+authorization, tool allowlists, or approval requirements.
+
+### Employee and M365 Context
+
+Employee and M365 Context is reserved for Work IQ preview and is disabled by default. When enabled,
+it uses delegated user identity so results remain within the signed-in user's permissions. The
+current preview is not supported with network-isolated Foundry projects, so an entity must validate
+its security and networking requirements before enabling it.
+
+### Workflow Actions
+
+Workflow Actions is a separate MCP connection for state-changing operations such as creating,
+submitting, updating, or cancelling a request. It is disabled by default and must remain separate
+from the read-only Government Systems connection. The included reference action server exposes only
+`create_service_request(service_name, summary)`. It generates an in-memory sample request and does
+not connect to a production backend.
+
+In production, the entity implements the action MCP adapter against its approved transaction
+backend, such as Dynamics 365, ServiceNow, SAP, Power Automate, a case-management API, or another
+entity-specific workflow service. The production path is:
+
+```text
+Agent -> Citadel APIM -> Foundry Toolbox -> action MCP -> transaction backend
+```
+
+Every Workflow Actions tool must declare `require_approval: always`. The consuming agent runtime
+must pause the exact pending call, show its arguments, and record explicit user approval before
+execution; metadata or a system-prompt instruction alone does not enforce approval. APIM then
+applies the access contract, permitted-tool policy, subscription and rate limits, logging, and
+backend isolation.
+
+### Tools and Skills
+
+Tools perform retrieval or system operations. Skills are versioned instructions that tell an agent
+how to select and safely use those tools. The publish script provisions three Foundry skills:
+
+- **Enterprise grounding** directs the agent to authoritative private sources and citations.
+- **Government service routing** chooses between enterprise knowledge, read-only systems, approved
+    public search, and actions.
+- **Safe transaction** requires exact-operation confirmation, least privilege, and an audit-ready
+    result for state-changing calls.
 
 ## How the Toolbox Is Built
 
