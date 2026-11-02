@@ -34,7 +34,8 @@ The important terms are:
 | MCP | Model Context Protocol, the protocol used by agents to discover and invoke Toolbox capabilities. |
 | Project connection | A Foundry resource that stores a downstream endpoint and authentication configuration. The Toolbox references it by name; this repository does not store its credentials. |
 | Toolbox version | An immutable snapshot of the Toolbox configuration. The first version is the default. Later versions are tested and explicitly promoted. |
-| Consumer endpoint | The stable Foundry MCP backend URL protected by APIM. It always serves the Toolbox's current default version. |
+| Backend consumer endpoint | The stable Foundry MCP URL printed after publication. It serves the Toolbox's current default version and becomes APIM's backend URL in Part 2. |
+| Agent-facing endpoint | The APIM gateway URL printed after registration in Part 2. Consumers authenticate to APIM rather than receiving backend credentials. |
 
 ### What This Repository Adds
 
@@ -74,6 +75,15 @@ flowchart LR
 This repository does **not** create the Foundry project, model deployment, Search index, entity MCP
 backend, or project connections. Those resources must already exist. It creates the governed
 Toolbox definition that joins them and publishes that definition to Foundry.
+
+### Register the Toolbox in APIM
+
+After publication, use [scripts/Register-ToolboxApim.ps1](scripts/Register-ToolboxApim.ps1) to register
+the published Toolbox endpoint as a native MCP server in an existing APIM instance. The script
+generates and deploys a TLS-validated backend, subscription-protected MCP API, and streaming-safe
+managed-identity policy. It supports `-WhatIf`; `citadel-toolbox export-apim` generates the ARM
+template without Azure access. See [docs/apim-mcp.md](docs/apim-mcp.md) for prerequisites,
+registration commands, security boundaries, and a VS Code client example.
 
 ## What Is Included
 
@@ -236,7 +246,7 @@ The deployment identity must belong to the tenant that owns the project and have
 the project and its connections. This add-on does not create the Foundry project, Search index, MCP
 service, or project connections.
 
-## Guided Deployment
+## Part 1: Create and Publish the Toolbox
 
 The guided setup creates the Python environment, installs dependencies, initializes or reuses an
 entity, collects non-secret connection references, writes the ignored `.env`, runs a strict build,
@@ -304,7 +314,7 @@ reuses existing skills, checks for a Toolbox name collision, and creates version
 becomes the default automatically. Use `-UpdateSkills` only when intentionally publishing new skill
 versions.
 
-## Validate the Deployment
+### Validate the Published Toolbox
 
 ```powershell
 $toolboxName = "$entity-toolbox"
@@ -325,9 +335,73 @@ returns expected citations, web search stays within approved domains, `resources
 skills, the read MCP enforces identity and authorization, and no state-changing operation is
 available.
 
+## Part 2: Register the Toolbox in APIM
+
+Part 1 creates the managed Toolbox and prints its backend consumer endpoint. Part 2 registers that
+**existing MCP server** in an existing APIM instance; it does not recreate the Toolbox or import
+the catalog YAML into APIM. The resulting API appears under **APIs > MCP servers**.
+
+Before registration, enable APIM's system-assigned managed identity, grant it permission to invoke
+the Foundry Toolbox, and ensure APIM can reach the endpoint. Use a supported APIM tier (not
+Consumption). Disable global and API-level response payload logging and avoid inherited policies
+that buffer MCP responses. See [the APIM integration guide](docs/apim-mcp.md) for the full
+prerequisites, identity model, and production security boundaries.
+
+From the repository root, use the full consumer endpoint printed by Part 1:
+
+```powershell
+./scripts/Register-ToolboxApim.ps1 `
+    -SubscriptionId '<subscription-id>' `
+    -ResourceGroup '<existing-apim-resource-group>' `
+    -ApimName '<existing-apim-name>' `
+    -BackendUrl 'https://<foundry-account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox>/mcp?api-version=v1'
+```
+
+Add `-WhatIf` to preview the target without writing files or calling Azure. The actual run generates
+an ARM template, checks APIM's tier and identity, validates the deployment, and creates or updates
+a TLS-validated backend, a subscription-protected native MCP API, and a streaming-safe policy.
+It uses APIM's managed identity to authenticate to Foundry with audience `https://ai.azure.com`.
+This is a shared service identity, not delegated user authentication.
+
+The script prints the agent-facing URL, normally:
+
+```text
+https://<apim-name>.azure-api.net/citadel-toolbox/mcp
+```
+
+Create an API-scoped APIM subscription for the consumer, then configure an HTTP MCP client with
+this URL and the `Ocp-Apim-Subscription-Key` header. The guide includes a VS Code configuration
+that prompts for the key rather than storing it in source control. The script does not create
+subscriptions, grant Foundry roles, or implement agent-side approval. Reusing an API ID replaces
+its backend configuration and API policy; use `-ApiId` and `-ApiPath` for separate entity routes.
+
+Before routing production traffic, verify MCP initialization, tool discovery, and a read-only
+tool call through APIM. Confirm requests without a valid subscription fail, compare tool results
+with the direct checks in Part 1, and verify skill discovery with a resources-capable client.
+ARM deployment success alone does not prove backend authorization or MCP behavior.
+
+To generate the registration without deploying or signing in to Azure:
+
+```powershell
+citadel-toolbox export-apim `
+    --apim-name '<existing-apim-name>' `
+    --backend-url '<full-consumer-endpoint-from-part-1>' `
+    --api-id citadel-toolbox --path citadel-toolbox `
+    --backend-audience https://ai.azure.com `
+    --output generated/apim/registration.json
+```
+
 ## Connect an Agent
 
-Use the stable endpoint only after validation:
+For the governed production route, use the APIM URL from Part 2 with an MCP client that supports
+your chosen APIM authentication. If attached skills are needed, the integration must also support
+MCP Resources and skill loading. Do not assume changing a URL adds subscription-key support to
+a Foundry-specific client.
+
+### Direct Foundry Integration
+
+The included Python example uses a **direct Foundry connection**, useful for the Part 1 validation
+path. It has not been adapted to send APIM subscription keys. Its stable backend endpoint is:
 
 ```text
 {project-endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1
@@ -340,7 +414,8 @@ support MCP Resources to discover attached skills.
 ### How the Python Example Uses the Toolbox
 
 The runnable [Python agent example](examples/python-agent/README.md) is a separate consumer of the
-published Toolbox. It does not build or publish the Toolbox. Its `.env` contains only:
+published Toolbox. It bypasses APIM and does not build, publish, or register the Toolbox. Its `.env`
+contains only:
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>

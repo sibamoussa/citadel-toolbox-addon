@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -8,6 +9,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from citadel_toolbox.apim import build_apim_template
 from citadel_toolbox.compiler import ENV_PATTERN, ConfigurationError, compile_bundle, write_yaml
 
 
@@ -56,6 +58,18 @@ def build_parser() -> argparse.ArgumentParser:
     configure_parser.add_argument("--mcp-url", required=True)
     configure_parser.add_argument("--mcp-connection-id", required=True)
     configure_parser.add_argument("--allowed-domain", action="append", required=True)
+
+    apim_parser = subparsers.add_parser(
+        "export-apim", help="Generate an ARM template registering an external MCP server in APIM."
+    )
+    apim_parser.add_argument("--apim-name", required=True)
+    apim_parser.add_argument("--backend-url", required=True, help="Full HTTPS MCP endpoint URL.")
+    apim_parser.add_argument("--api-id", default="citadel-toolbox")
+    apim_parser.add_argument("--path", default="citadel-toolbox")
+    apim_parser.add_argument(
+        "--backend-audience", help="Use APIM managed identity for backend auth."
+    )
+    apim_parser.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -133,6 +147,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
+        return 0
+
+    if args.command == "export-apim":
+        try:
+            template = build_apim_template(
+                apim_name=args.apim_name,
+                backend_url=args.backend_url,
+                api_id=args.api_id,
+                path=args.path,
+                backend_audience=args.backend_audience,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(template, indent=2) + "\n", encoding="utf-8")
+        except (ValueError, OSError) as error:
+            parser.error(str(error))
+        print(f"Wrote {args.output}")
         return 0
 
     if args.command == "init-entity":
