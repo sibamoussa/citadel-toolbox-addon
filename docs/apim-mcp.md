@@ -121,6 +121,12 @@ subscription must fail. A successful ARM deployment alone does not establish bac
 RBAC correctness, tool behavior, or approval enforcement. Keep state-changing tool tests behind
 explicit approval.
 
+For a runnable hosted agent using the same APIM subscription-key route, see the
+[Python example](../examples/python-agent/README.md#connect-through-apim). Set
+`TOOLBOX_CONNECTION_MODE=apim`, point `TOOLBOX_ENDPOINT` at this gateway URL, and inject
+`APIM_SUBSCRIPTION_KEY` into the agent process. The model still authenticates separately using
+`DefaultAzureCredential`; APIM's managed identity authenticates the Toolbox backend calls.
+
 If the backend returns 401/403, check APIM identity, token audience, project role assignments, and
 the Toolbox's downstream connections. If discovery hangs, check network access and global/API
 response logging and buffering policies first.

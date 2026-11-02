@@ -393,72 +393,86 @@ citadel-toolbox export-apim `
 
 ## Connect an Agent
 
-For the governed production route, use the APIM URL from Part 2 with an MCP client that supports
-your chosen APIM authentication. If attached skills are needed, the integration must also support
-MCP Resources and skill loading. Do not assume changing a URL adds subscription-key support to
-a Foundry-specific client.
+The [Python agent example](examples/python-agent/README.md) now supports the APIM URL from Part 2
+using `MCPStreamableHTTPTool` and an `Ocp-Apim-Subscription-Key` header. New setup files default to
+this route. The agent's model connection remains a separate Entra-authenticated Foundry connection.
 
-### Direct Foundry Integration
+### Configure the APIM Route
 
-The included Python example uses a **direct Foundry connection**, useful for the Part 1 validation
-path. It has not been adapted to send APIM subscription keys. Its stable backend endpoint is:
-
-```text
-{project-endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1
-```
-
-Python hosted agents use Agent Framework `FoundryToolbox`; .NET hosted agents use
-`AddFoundryToolboxes`; prompt agents attach the endpoint as a remote MCP tool. The client must
-support MCP Resources to discover attached skills.
-
-### How the Python Example Uses the Toolbox
-
-The runnable [Python agent example](examples/python-agent/README.md) is a separate consumer of the
-published Toolbox. It bypasses APIM and does not build, publish, or register the Toolbox. Its `.env`
-contains only:
+Run `./examples/python-agent/Setup.ps1`, then configure the example's ignored `.env`:
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
 AZURE_AI_MODEL_DEPLOYMENT_NAME=<model-deployment-name>
-TOOLBOX_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox-name>/mcp?api-version=v1
+TOOLBOX_CONNECTION_MODE=apim
+TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox/mcp
+APIM_SUBSCRIPTION_KEY=<api-scoped-subscription-key>
 ```
 
-[`examples/python-agent/main.py`](examples/python-agent/main.py) then performs four jobs:
+Create an active API-scoped subscription in APIM and obtain its key securely. Use the actual gateway
+URL printed by registration, including the final `/mcp`, but no query parameters. The registration
+script does not create consumer subscriptions. Keep the key out of source control, prompts, browser
+code, and logs; inject it from your hosting secret store in production.
 
-1. `DefaultAzureCredential` obtains the caller's Microsoft Entra identity. No tool credential is
-    embedded in the code.
+There are three separate authorization checks:
+
+1. **Agent to model:** `DefaultAzureCredential` authenticates the developer/workload identity to
+   the model's Foundry project.
+2. **Agent to APIM:** the API-scoped subscription key authorizes MCP requests at the gateway.
+3. **APIM to Toolbox:** APIM's managed identity obtains a Foundry token and needs Toolbox access
+   in the backend project. Downstream credentials remain in Foundry project connections.
+
+This route does not forward the user's identity to the Toolbox and is not delegated Work IQ
+authentication. It targets the subscription-key gateway policy in Part 2; OAuth-protected gateways
+need a corresponding client authentication implementation.
+
+### How the Python Example Uses the Toolbox
+
+The runnable [Python agent example](examples/python-agent/README.md) is a separate consumer of the
+published Toolbox. It does not build, publish, or register the Toolbox.
+
+[main.py](examples/python-agent/main.py) and
+[toolbox_connection.py](examples/python-agent/toolbox_connection.py) perform four jobs:
+
+1. Load the example's own `.env` and validate the connection mode, endpoint, and APIM key.
 2. `FoundryChatClient` connects the agent to the selected model deployment.
-3. `FoundryToolbox` reads `TOOLBOX_ENDPOINT`, authenticates MCP requests, discovers callable tools,
-    and forwards tool calls to Foundry.
-4. `Agent(..., tools=toolbox)` gives the model those capabilities, while `ResponsesHostServer`
-    exposes the agent through the Foundry Responses hosting protocol.
+3. In `apim` mode, `MCPStreamableHTTPTool` sends the subscription key on MCP requests and disables
+   prompt discovery because APIM does not support MCP prompts.
+4. Open the MCP session with `async with toolbox`, discover tools, pass them to `Agent`, and keep
+   the connection open while `ResponsesHostServer` runs. Shutdown or failure closes the session.
 
 ```python
-credential = DefaultAzureCredential()
-toolbox = FoundryToolbox(credential)
-client = FoundryChatClient(
-    project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
-    model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
-    credential=credential,
+toolbox = MCPStreamableHTTPTool(
+    name="citadel-toolbox",
+    url=os.environ["TOOLBOX_ENDPOINT"],
+    static_headers={"Ocp-Apim-Subscription-Key": os.environ["APIM_SUBSCRIPTION_KEY"]},
+    load_prompts=False,
 )
-agent = Agent(client=client, tools=toolbox, default_options={"store": False})
+async with toolbox:
+    agent = Agent(client=client, tools=toolbox, default_options={"store": False})
+    await ResponsesHostServer(agent).run_async()
 ```
 
-For a prompt that requires private policy information, the runtime flow is:
+For a prompt that requires private policy information, the tool execution flow is:
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Agent
     participant Model
+    participant APIM
     participant Toolbox as Foundry Toolbox
     participant Search as Azure AI Search
     User->>Agent: Ask a policy question
     Agent->>Model: Prompt plus available Toolbox tools
-    Model->>Toolbox: Discover or call the relevant tool
+    Model-->>Agent: Request a relevant tool
+    Agent->>APIM: MCP call with subscription key
+    APIM->>Toolbox: Forward with APIM managed-identity token
     Toolbox->>Search: Use the configured project connection
     Search-->>Toolbox: Grounded documents and citations
-    Toolbox-->>Model: Tool result
+    Toolbox-->>APIM: Tool result
+    APIM-->>Agent: MCP result
+    Agent->>Model: Tool result
     Model-->>Agent: Grounded answer
     Agent-->>User: Answer with citations
 ```
@@ -473,9 +487,29 @@ resources and require a client integration that supports MCP Resources and skill
 demonstrates the callable-tool path; do not assume that merely constructing `FoundryToolbox` injects
 every attached skill into the model's instructions.
 
-Set `TOOLBOX_ENDPOINT` to the stable endpoint above. Run
-`./examples/python-agent/Setup.ps1`, replace the placeholders in the generated `.env`, and press
-**F5** in VS Code to test the agent in Foundry Toolkit Agent Inspector.
+Neither connection mode automatically loads attached skill resources. Use a read-only Toolbox;
+the API name and subscription key do not enforce tool-level approval or remove action tools.
+
+Press **F5** and select **Debug Citadel Toolbox Agent Example** to test in Agent Inspector, or run
+`./examples/python-agent/.venv/Scripts/python.exe ./examples/python-agent/main.py`. Verify tool
+discovery and a known read-only request through APIM, then confirm an invalid subscription fails.
+The [example README](examples/python-agent/README.md#verify-and-troubleshoot) includes troubleshooting
+and offline tests. Setup preserves an existing `.env`; add the mode and APIM settings when upgrading.
+
+### Optional Direct Foundry Integration
+
+For Part 1 validation without APIM, retain the model settings and use:
+
+```dotenv
+TOOLBOX_CONNECTION_MODE=foundry
+TOOLBOX_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox-name>/mcp?api-version=v1
+```
+
+This mode uses `FoundryToolbox(credential, url=endpoint)` and ignores `APIM_SUBSCRIPTION_KEY`.
+The agent's identity needs direct Toolbox access as well as model access. For backward compatibility,
+omitting `TOOLBOX_CONNECTION_MODE` also selects direct Foundry mode. Set it explicitly to `apim`
+to use the gateway; changing only the URL is not sufficient. .NET direct clients can use
+`AddFoundryToolboxes`; other agent runtimes must configure their own MCP transport authentication.
 
 ## Operate Versions
 
