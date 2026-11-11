@@ -1,8 +1,42 @@
 # Citadel Toolbox Add-on
 
-A reusable Microsoft Foundry Toolbox add-on for Citadel deployments. A governed core defines the
-approved tools and skills; each customer supplies only an entity overlay and Foundry connection
-references. Customers do not fork the catalog or store credentials in this repository.
+A reusable Microsoft Foundry Toolbox configuration for Citadel. Publish approved tools and skills
+in Foundry, expose them through Azure API Management (APIM), and connect an agent to one governed
+MCP endpoint. Each entity supplies its own data, services, and connection references; credentials
+remain in Foundry connections or an approved secret store.
+
+## Start Here
+
+**This is not a one-click document-ingestion or infrastructure deployment.** You need an existing
+Foundry project and working knowledge sources. This repository does not supply policy documents,
+create/populate a Search index, deploy a model, or create an APIM instance.
+
+Follow this order for a first deployment:
+
+1. [Understand the runtime and authentication](#how-tools-run-and-authenticate).
+2. [Choose tools and check prerequisites](#prerequisites). If you have no index, start with the
+    [new-index checklist](docs/tool-prerequisites.md#starting-without-an-index).
+3. Clone the repository and [prepare your entity locally](#part-1-create-and-publish-the-toolbox).
+4. If needed, [initialize Search and Foundry IQ connections](#optional-knowledge-initialization)
+    against your existing populated index. Configure every enabled source, or disable it.
+5. [Publish and validate the Toolbox](#validate-the-published-toolbox).
+6. [Register it in an existing APIM instance](#part-2-register-the-toolbox-in-apim).
+7. [Configure and run the Python agent](#connect-an-agent).
+
+Already have a working Toolbox in APIM? Go directly to [Connect an Agent](#connect-an-agent).
+For subsequent releases, use [Operate Versions](#operate-versions), not the first-version publisher.
+
+### Documentation Map
+
+| Need | Read |
+| --- | --- |
+| Per-tool infrastructure, identity, and data requirements | [Tool prerequisites](docs/tool-prerequisites.md) |
+| Entity setup and owner handoff | [Entity onboarding](docs/entity-onboarding.md) |
+| Search and Foundry IQ connection provisioning | [Optional knowledge initialization](#optional-knowledge-initialization) |
+| Gateway registration, identities, and streaming | [APIM integration](docs/apim-mcp.md) |
+| Runnable agent, environment settings, and troubleshooting | [Python example](examples/python-agent/README.md) |
+| Microsoft overlay configuration | [Microsoft entity example](docs/microsoft-entity-example.md) |
+| Design background | [Architecture](docs/architecture.md) |
 
 ## Start Here: What Is a Toolbox?
 
@@ -18,11 +52,10 @@ without changing each consuming agent.
 
 ### How Citadel Uses the Toolbox
 
-A Foundry Toolbox groups multiple tools and exposes them through one MCP backend endpoint. Citadel
-places Azure API Management (APIM) in front of that endpoint and applies access contracts for
-authentication, permitted tools, rate limits, subscriptions, logging, and backend isolation. Agents
-call the stable Citadel-governed MCP endpoint exposed by APIM; the Foundry Toolbox endpoint remains
-behind APIM and manages tool discovery and invocation.
+A Foundry Toolbox groups tools behind one MCP backend endpoint. Citadel places APIM in front of
+it. Agents call the gateway; Foundry resolves and invokes the downstream tools. APIM can apply
+configured authentication, rate limits, auditing, and access-contract policies. Registering an API
+alone does not implement tool allowlists or document-level authorization.
 
 The important terms are:
 
@@ -37,56 +70,66 @@ The important terms are:
 | Backend consumer endpoint | The stable Foundry MCP URL printed after publication. It serves the Toolbox's current default version and becomes APIM's backend URL in Part 2. |
 | Agent-facing endpoint | The APIM gateway URL printed after registration in Part 2. Consumers authenticate to APIM rather than receiving backend credentials. |
 
-### What This Repository Adds
+## How Tools Run and Authenticate
 
-Foundry provides the managed Toolbox service. This repository adds a repeatable governance and
-deployment layer for Citadel:
-
-1. The platform team defines the reusable capabilities and safety defaults once in
-    [`catalog/core.yaml`](catalog/core.yaml).
-2. Each entity changes only its own [`entities/<entity>/overlay.yaml`](entities/example/overlay.yaml),
-    such as connection references, an index name, and an entity-scoping filter.
-3. The Python compiler in [`src/citadel_toolbox/compiler.py`](src/citadel_toolbox/compiler.py) merges
-    the two files, resolves local environment variables, removes disabled entries, validates safety
-    rules, and renders the YAML format accepted by Foundry.
-4. [`scripts/Publish-Toolbox.ps1`](scripts/Publish-Toolbox.ps1) uploads the local `SKILL.md` files and
-    calls `azd ai toolbox create --from-file` to create the managed Toolbox in the selected Foundry
-    project.
-5. APIM protects the resulting backend endpoint, and agents connect through the Citadel-governed
-    endpoint exposed by APIM. Agents do not import this compiler or receive downstream credentials.
+APIM is the gateway, Foundry Toolbox routes tool calls, and the downstream services perform
+retrieval. The model selects a tool; **the agent runtime executes the call**, not the model itself.
 
 ```mermaid
 flowchart LR
-     Core[Core catalog] --> Compiler[Citadel compiler]
-     Overlay[Entity overlay] --> Compiler
-     Env[Local non-secret references] --> Compiler
-     Compiler --> Generated[generated/entity/toolbox.yaml]
-     Skills[skills/*/SKILL.md] --> Publish[Publish script]
-     Generated --> Publish
-     Publish --> Foundry[Managed Foundry Toolbox]
-     Connections[Foundry project connections] --> Foundry
-      Agent[Agent code] -->|one governed MCP endpoint| APIM[Citadel APIM access contract]
-      APIM -->|protected backend MCP endpoint| Foundry
-     Foundry --> Search[Azure AI Search]
-    Foundry --> IQ[Microsoft Foundry IQ]
-    Foundry --> Work[Work IQ optional]
-    Foundry --> Discovery[Toolbox Search]
+    Agent[Agent runtime] <-->|Model authentication - separate path| Model[Model deployment]
+    Agent -->|1. Subscription key| APIM[APIM Toolbox API]
+    APIM -->|2. Managed identity token| Toolbox[Foundry Toolbox]
+    Toolbox -->|3. Search connection authentication| Search[Azure AI Search]
+    Toolbox -->|3. MCP connection authentication| IQ[Foundry IQ knowledge base]
+    Toolbox -->|3. Supported delegated OAuth flow| Work[Work IQ - optional]
 ```
 
-This repository does **not** create the Foundry project, model deployment, Search service, or Search
-index, and does not ingest documents. The optional
-[knowledge initializer](scripts/Initialize-ToolboxKnowledge.ps1) creates a knowledge source, knowledge
-base, and two project connections against those prerequisites. Publication separately creates skills
-and the governed Toolbox definition that joins the capabilities.
+### Example: A Policy Question
 
-### Register the Toolbox in APIM
+1. The agent sends the user's question and available tool definitions to the model.
+2. The model requests discovery. The agent calls `tool_search` through APIM to find relevant tools.
+3. APIM validates the consumer subscription and configured policies, then authenticates to Foundry.
+4. Toolbox returns matching tool names and schemas, such as Foundry IQ's `knowledge_base_retrieve`.
+5. The model selects a discovered tool. The agent invokes it using `call_tool` through the same
+   APIM route, passing the exact discovered name and schema-compatible arguments.
+6. Toolbox resolves the configured Foundry project connection and authenticates to that service.
+7. The service returns evidence through Toolbox and APIM to the agent. The agent sends the result
+   to the model, which produces an answer with source citations.
 
-After publication, use [scripts/Register-ToolboxApim.ps1](scripts/Register-ToolboxApim.ps1) to register
-the published Toolbox endpoint as a native MCP server in an existing APIM instance. The script
-generates and deploys a TLS-validated backend, subscription-protected MCP API, and streaming-safe
-managed-identity policy. It supports `-WhatIf`; `citadel-toolbox export-apim` generates the ARM
-template without Azure access. See [docs/apim-mcp.md](docs/apim-mcp.md) for prerequisites,
-registration commands, security boundaries, and a VS Code client example.
+Discovery is relevance-based, not a guaranteed complete inventory. Finding a tool does not prove
+its credentials, networking, or retrieval configuration work; test actual execution separately.
+
+### Three Authentication Boundaries
+
+| Hop | Authentication in the supplied APIM route | What it grants |
+| --- | --- | --- |
+| Agent to APIM | Consumer key in `Ocp-Apim-Subscription-Key` | Access to the gateway API under its subscription scope and applicable policies |
+| APIM to Foundry Toolbox | APIM's selected managed identity obtains a token for `https://ai.azure.com` | Toolbox invocation, provided that identity has the required Foundry project access |
+| Toolbox to a service | Credentials or supported identity configured in that service's Foundry project connection | Only the downstream permissions of that connection and authorization flow |
+
+These are separate grants. An APIM key is not a Search key, APIM's identity is not the employee's
+identity, and a successful APIM deployment does not establish downstream access. The registration
+policy removes the consumer key before forwarding. Agents do not receive downstream credentials.
+
+| Tool or resource | Backend authentication and behavior |
+| --- | --- |
+| Native Azure AI Search | Uses the Search project connection to query its configured index. Connection authentication and query/index compatibility must both work. |
+| Foundry IQ | Uses its MCP project connection to call the knowledge-base endpoint; the knowledge base retrieves from its configured sources. |
+| Toolbox Search | Built-in discovery inside Toolbox; no separate Search service credential or policy-document retrieval. |
+| Work IQ | Requires its OAuth connection, consent, and supported delegated-user flow. The supplied shared APIM identity route alone is insufficient. |
+| Skills | Instructions exposed through MCP resources, not independently authenticated retrieval services. The client must load them. |
+
+The optional initializer uses a **broad Search admin API key** stored in the Search and Foundry IQ
+connections. It does not configure least-privilege identity-based retrieval. With shared credentials,
+access is not automatically trimmed to each employee's permissions. Enforce entity/document access
+explicitly and validate denied-access cases before sharing the Toolbox. APIM products or subscription
+keys alone do not filter tools or documents.
+
+**Model authentication is separate.** The Python example calls the model directly using
+`DefaultAzureCredential`; only Toolbox traffic passes through APIM. A Citadel model-through-APIM
+deployment needs a separate model API, client configuration, and access contract. See the
+[two architecture flows](#this-example-only-the-toolbox-is-behind-apim) below.
 
 ## What Is Included
 
@@ -197,45 +240,18 @@ promoted; this source catalog description is not a claim about the live skill in
 
 ## How the Toolbox Is Built
 
-For the example entity, the build has three inputs:
+| Input or operation | Owner and behavior |
+| --- | --- |
+| [Core catalog](catalog/core.yaml) | Platform-owned tool definitions and safety defaults |
+| [Entity overlay](entities/example/overlay.yaml) | Entity-owned overrides, merged by stable `id`; no catalog fork |
+| Entity's ignored `.env` | Non-secret connection IDs, index names, and endpoint references |
+| [Compiler](src/citadel_toolbox/compiler.py) | Resolves variables, removes disabled entries, validates configuration, and writes disposable `generated/<entity>/toolbox.yaml` |
+| [Publisher](scripts/Publish-Toolbox.ps1) | Strictly rebuilds, creates missing skills or reuses existing ones, creates a new Toolbox's first version, and prints its backend endpoint |
+| [APIM registration](scripts/Register-ToolboxApim.ps1) | Registers the existing MCP backend in an existing gateway; does not provision source services or permissions |
 
-- [`catalog/core.yaml`](catalog/core.yaml) supplies the complete approved catalog and defaults.
-- [`entities/example/overlay.yaml`](entities/example/overlay.yaml) overrides only entity-owned
-    values. Items merge by stable `id`, so the entity does not copy the core catalog.
-- `entities/example/.env` supplies local connection resource IDs and endpoint values. It is ignored
-    by Git and is used only while compiling.
-
-`Build-Toolbox.ps1` loads those values and runs the compiler. Strict compilation fails when a value
-is missing, a placeholder remains, a required connection field is absent, a referenced skill file
-does not exist, or a write-capable tool lacks `require_approval: always`.
-
-The disposable output is `generated/example/toolbox.yaml`. For the example configuration it has the
-following Foundry-facing shape:
-
-```yaml
-description: Shared Citadel capabilities customized for Example Entity.
-connections:
-    - name: search
-      index: policy-index
-tools:
-    - type: toolbox_search
-skills:
-    - name: enterprise-grounding
-```
-
-The `connections` names refer to existing Foundry project connections. Their keys, tokens, and
-identity configuration remain in Foundry. The `toolbox_search` entry lets the model discover relevant
-tools on demand instead of placing every tool definition in every prompt. Skill entries refer to
-versioned skills that the publish script creates in the same Foundry project.
-
-During publication, the script performs these operations in order:
-
-1. Rebuild and strictly validate the generated YAML.
-2. Select the target Foundry project.
-3. Create missing skills from the repository's `skills/*/SKILL.md` files, or reuse existing skills.
-4. Refuse to overwrite an existing Toolbox name through the first-version workflow.
-5. Create Toolbox version 1 from the generated YAML. Foundry makes this first version the default.
-6. Print the stable consumer endpoint for agent applications.
+Generated connection and skill names reference resources in the selected Foundry project.
+Compilation does not check live credentials or retrieve documents. Publication refuses an existing
+Toolbox name; later releases use the [version workflow](#operate-versions).
 
 ## Prerequisites
 
@@ -271,7 +287,57 @@ connections or consent can block discovery of other sources. SharePoint is not c
 The guide also covers [APIM and agent prerequisites](docs/tool-prerequisites.md#shared-runtime-and-apim-requirements)
 and the checks required before calling a deployment ready.
 
+## Part 1: Create and Publish the Toolbox
+
+Run all commands from the repository root in PowerShell 7. Start with a new entity using the shared
+Search-and-discovery defaults; Work IQ is disabled there. The Microsoft overlay enables additional
+IQ sources and is not a ready-to-run configuration for a different customer's resources.
+
+### Prepare Locally
+
+```powershell
+git clone https://github.com/sibamoussa/citadel-toolbox-addon.git
+Set-Location citadel-toolbox-addon
+./scripts/Setup-Toolbox.ps1 -Entity my-entity -SkipPublish
+```
+
+The script creates a local Python environment, installs dependencies, initializes or reuses the
+entity, asks for its display name and Search connection ID/index, writes the ignored entity `.env`,
+and runs strict validation. It does not create the Search index or verify live retrieval.
+
+If the connection does not exist yet, use the optional initializer below before completing setup.
+For overlays enabling Foundry IQ or Work IQ, configure their references in the entity's ignored
+`.env` using its `.env.example` before strict validation can succeed. An initial run may stop at
+that check; complete the references or disable unready sources, then rerun. `-SkipPublish` skips
+cloud publication, not the strict build.
+
+Reruns preserve the existing entity and `.env`. Use `-Reconfigure` only to intentionally replace
+configuration. Never place downstream credentials in the entity's `.env` or overlay.
+
+### Publish After Sources Are Ready
+
+```powershell
+./scripts/Setup-Toolbox.ps1 -Entity my-entity
+```
+
+The script rebuilds, installs the Foundry extension, signs in to the specified tenant, asks for the
+project endpoint, creates missing skills, and publishes version 1. Save the printed **backend
+consumer endpoint** for Part 2. Use a new Toolbox name; this workflow does not update an existing one.
+Use `-UpdateSkills` only when intentionally publishing new skill versions.
+
+In VS Code, **Terminal > Run Task > Citadel Toolbox: Guided local setup** prepares locally;
+**Citadel Toolbox: Guided setup and publish** performs publication. Both use the same prerequisites.
+
+Azure CLI and Azure Developer CLI maintain separate sign-in sessions. If publication reports
+`AzureDeveloperCLICredential`, repeat `azd auth login --tenant-id '<owning-tenant-id>'`.
+
 ## Optional Knowledge Initialization
+
+Skip this section if working Search and Foundry IQ connections already exist. Otherwise run it
+after cloning and before publication. It does not make an unpopulated or incompatible index ready.
+
+<details>
+<summary>Provision a knowledge source, knowledge base, and two key-based connections</summary>
 
 [scripts/Initialize-ToolboxKnowledge.ps1](scripts/Initialize-ToolboxKnowledge.ps1) is a separate,
 opt-in provisioning step, not part of guided setup or publication. It creates only:
@@ -340,8 +406,9 @@ entity's uppercase prefix (for Microsoft, `MICROSOFT`), set the Search index nam
 Work IQ references required by its overlay. No `.env` is automatically changed. Then run:
 
 ```powershell
-./scripts/Build-Toolbox.ps1 -Entity microsoft
-./scripts/Publish-Toolbox.ps1 -Entity microsoft `
+$entity = 'my-entity'
+./scripts/Build-Toolbox.ps1 -Entity $entity
+./scripts/Publish-Toolbox.ps1 -Entity $entity `
     -ProjectEndpoint 'https://<account>.services.ai.azure.com/api/projects/<project>' `
     -ToolboxName '<new-toolbox-name>'
 ```
@@ -354,47 +421,15 @@ it. Work IQ still requires its own compatible connection and delegated consent.
 Run the initializer's Azure-independent tests with
 `pwsh -NoProfile -File ./tests/Test-InitializeToolboxKnowledge.ps1`.
 
-## Part 1: Create and Publish the Toolbox
-
-The guided setup creates the Python environment, installs dependencies, initializes or reuses an
-entity, collects non-secret connection references, writes the ignored `.env`, runs a strict build,
-installs the Foundry extension, signs in, provisions missing skills, and publishes version 1.
-
-### Option A: VS Code
-
-1. Clone and open the repository in VS Code.
-2. Open **Terminal > Run Task**.
-3. Select **Citadel Toolbox: Guided setup and publish**.
-4. Answer the prompts.
-
-Use **Citadel Toolbox: Guided local setup** when you want to configure and validate without
-publishing to Foundry.
-
-### Option B: One Command
-
-```powershell
-git clone https://github.com/sibamoussa/citadel-toolbox-addon.git
-Set-Location citadel-toolbox-addon
-./scripts/Setup-Toolbox.ps1
-```
-
-The script prompts for:
-
-- Entity name and display name
-- Search connection resource ID and index name
-- Foundry tenant ID and project endpoint
-
-For overlays that enable Microsoft Foundry IQ or Work IQ, supply their additional connection
-references in the entity's ignored `.env` before strict validation, following its `.env.example`.
-
-Rerunning the script reuses the entity and its local `.env`. Add `-Reconfigure` to replace those
-values, `-SkipPublish` for local setup only, or `-UpdateSkills` when intentionally publishing new
-skill versions.
-
-If a later command reports `AzureDeveloperCLICredential`, repeat `azd auth login` with the owning
-tenant ID. Azure CLI and Azure Developer CLI maintain separate sign-in sessions.
+</details>
 
 ## Advanced Commands
+
+The guided setup above is the normal path. Use these commands for an already configured entity
+or automation; replace `$entity` and `$projectEndpoint` with your own values.
+
+<details>
+<summary>Build or publish directly instead of using guided setup</summary>
 
 The guided script accepts parameters for repeatable or CI-driven execution, so every answer can be
 supplied non-interactively. Run `Get-Help ./scripts/Setup-Toolbox.ps1 -Detailed` for its parameter
@@ -423,9 +458,15 @@ reuses existing skills, checks for a Toolbox name collision, and creates version
 becomes the default automatically. Use `-UpdateSkills` only when intentionally publishing new skill
 versions.
 
+</details>
+
 ### Validate the Published Toolbox
 
+Use the same entity, Toolbox name, and project endpoint chosen during publication:
+
 ```powershell
+$entity = 'my-entity'
+$projectEndpoint = 'https://<account>.services.ai.azure.com/api/projects/<project>'
 $toolboxName = "$entity-toolbox"
 $env:AZURE_DEV_USER_AGENT = 'microsoft_foundry_skill'
 try {
@@ -443,6 +484,9 @@ Test the version-specific MCP endpoint reported by the CLI before connecting age
 returns authorized results with expected citations, Toolbox Search discovers the intended tools,
 and `resources/list` discovers the expected skills. Validate Microsoft Foundry IQ retrieval and
 delegated Work IQ access separately when enabled.
+
+Check both HTTP status and JSON-RPC `error`/tool `isError`. HTTP 200 and a successful deployment
+are not proof of retrieval. Stop and fix or disable failing sources before registering consumers.
 
 ## Part 2: Register the Toolbox in APIM
 
@@ -491,9 +535,8 @@ https://<apim-name>.azure-api.net/citadel-toolbox
 ```
 
 The native MCP endpoint is exactly `-ApiPath`; no `/mcp` suffix is appended.
-With `-ApiPath citadel-toolbox`, consumers use `/citadel-toolbox`. To reproduce the actual
-original endpoint from the previous route deployment, set `-ApiPath 'mcp/citadel-toolbox'`
-and use `/mcp/citadel-toolbox`. No redirect or compatibility alias is created.
+With `-ApiPath citadel-toolbox`, consumers use `/citadel-toolbox`. With a custom path such as
+`-ApiPath 'mcp/citadel-toolbox'`, they use `/mcp/citadel-toolbox`. No compatibility alias is created.
 The backend Foundry toolbox URL still requires its `/mcp` path.
 
 Use a valid API-scoped or associated product-scoped APIM subscription for the consumer,
@@ -528,13 +571,20 @@ and product existence in Azure before deployment. Neither command grants roles.
 
 ## Connect an Agent
 
-The [Python agent example](examples/python-agent/README.md) now supports the APIM URL from Part 2
+The [Python agent example](examples/python-agent/README.md) supports the APIM URL from Part 2
 using `MCPStreamableHTTPTool` and an `Ocp-Apim-Subscription-Key` header. New setup files default to
 this route. The agent's model connection remains a separate Entra-authenticated Foundry connection.
+This example consumes an existing Toolbox; it does not provision or publish one.
 
 ### Configure the APIM Route
 
-Run `./examples/python-agent/Setup.ps1`, then configure the example's ignored `.env`:
+From the repository root:
+
+```powershell
+./examples/python-agent/Setup.ps1
+```
+
+Configure the example's ignored `.env` using your own endpoints and securely obtained key:
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
@@ -544,27 +594,39 @@ TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox
 APIM_SUBSCRIPTION_KEY=<api-scoped-subscription-key>
 ```
 
-Create an active API-scoped subscription in APIM and obtain its key securely. Use the actual gateway
+Create an active API-scoped or associated product-scoped subscription in APIM and obtain its key securely. Use the actual gateway
 URL printed by registration, exactly matching the configured API path, with no query parameters. The registration
 script does not create consumer subscriptions. Keep the key out of source control, prompts, browser
 code, and logs; inject it from your hosting secret store in production.
 
-There are three separate authorization checks:
+The developer/workload identity needs model access. APIM's identity needs Toolbox access; each
+downstream connection needs source access. See [Three Authentication Boundaries](#three-authentication-boundaries).
+This client targets the subscription-key policy in Part 2. OAuth-protected gateways require a
+corresponding client authentication implementation; this is not delegated Work IQ authentication.
 
-1. **Agent to model:** `DefaultAzureCredential` authenticates the developer/workload identity to
-   the model's Foundry project.
-2. **Agent to APIM:** the API-scoped subscription key authorizes MCP requests at the gateway.
-3. **APIM to Toolbox:** APIM's managed identity obtains a Foundry token and needs Toolbox access
-   in the backend project. Downstream credentials remain in Foundry project connections.
+### Run and Verify
 
-This route does not forward the user's identity to the Toolbox and is not delegated Work IQ
-authentication. It targets the subscription-key gateway policy in Part 2; OAuth-protected gateways
-need a corresponding client authentication implementation.
+Run the agent server from the repository root:
+
+```powershell
+./examples/python-agent/.venv/Scripts/python.exe ./examples/python-agent/main.py
+```
+
+Alternatively, press **F5** and select **Debug Citadel Toolbox Agent Example** to test in Agent
+Inspector. Ask a question whose answer exists in your own documents. Inspect the tool call and
+compare its answer/citations with the evidence; then verify an invalid APIM subscription key fails.
+Startup alone is not an end-to-end test. See the [example's run instructions](examples/python-agent/README.md#run)
+and [troubleshooting](examples/python-agent/README.md#verify-and-troubleshoot) for client details
+and offline checks.
+
+Setup preserves existing `.env` files. When upgrading an old example, add
+`TOOLBOX_CONNECTION_MODE=apim` and the APIM settings explicitly. Skills require explicit resource
+loading; this example demonstrates callable tools and does not automatically apply attached skills.
 
 ### How the Python Example Uses the Toolbox
 
-The runnable [Python agent example](examples/python-agent/README.md) is a separate consumer of the
-published Toolbox. It does not build, publish, or register the Toolbox.
+<details>
+<summary>Implementation and architecture: sample route versus Citadel model-and-tool routes</summary>
 
 [main.py](examples/python-agent/main.py) and
 [toolbox_connection.py](examples/python-agent/toolbox_connection.py) perform four jobs:
@@ -668,11 +730,7 @@ every attached skill into the model's instructions.
 Neither connection mode automatically loads attached skill resources. Use a read-only Toolbox;
 the API name and subscription key do not enforce tool-level approval or remove action tools.
 
-Press **F5** and select **Debug Citadel Toolbox Agent Example** to test in Agent Inspector, or run
-`./examples/python-agent/.venv/Scripts/python.exe ./examples/python-agent/main.py`. Verify tool
-discovery and a known read-only request through APIM, then confirm an invalid subscription fails.
-The [example README](examples/python-agent/README.md#verify-and-troubleshoot) includes troubleshooting
-and offline tests. Setup preserves an existing `.env`; add the mode and APIM settings when upgrading.
+</details>
 
 ### Optional Direct Foundry Integration
 
@@ -688,6 +746,20 @@ The agent's identity needs direct Toolbox access as well as model access. For ba
 omitting `TOOLBOX_CONNECTION_MODE` also selects direct Foundry mode. Set it explicitly to `apim`
 to use the gateway; changing only the URL is not sufficient. .NET direct clients can use
 `AddFoundryToolboxes`; other agent runtimes must configure their own MCP transport authentication.
+
+## Troubleshooting
+
+| Symptom | Check or action |
+| --- | --- |
+| Strict build reports missing references | Fill every enabled source's variables from the entity `.env.example`, or disable the unready source and its related skill. |
+| Native Search reports a missing integrated vectorizer | Stored vectors are insufficient for the current hybrid mode. Configure the compatible query-time vectorizer; see [native Search prerequisites](docs/tool-prerequisites.md#native-azure-ai-search). |
+| Work IQ consent or missing-connection error blocks discovery | Complete its supported OAuth flow or [exclude Work IQ](docs/tool-prerequisites.md#work-iq-optional-preview) in a new test version; never bypass authentication. |
+| APIM returns 401/403 | Check the consumer subscription scope/state and applicable policies first; separately verify APIM identity permissions and downstream access. |
+| APIM returns 404 | Use the exact configured API path, with no automatic `/mcp` suffix. The Foundry backend still needs its own `/mcp` path. |
+| Tools are found but retrieval fails | Inspect JSON-RPC errors, source credentials, network reachability, and index configuration. Discovery does not test execution. |
+| Foundry IQ works but native Search fails | They can use the same index with different retrieval requirements. Test and configure each path independently. |
+| No useful policy answer | Verify ingestion, indexed content, permissions, and source metadata. This repository does not include a populated `policy-index`. |
+| Skills do not affect responses | Confirm published skill resources and explicit client loading; this Python example does not automatically load them. |
 
 ## Operate Versions
 
