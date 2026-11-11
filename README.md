@@ -94,17 +94,20 @@ registration commands, security boundaries, and a VS Code client example.
 | Policy knowledge | Microsoft Foundry IQ MCP | Enabled |
 | Tool discovery | Toolbox Search | Enabled |
 | Employee and M365 context | Work IQ preview | Enabled |
+| Grounded knowledge guidance | Enterprise grounding skill | Included in source |
+| Authorized workplace guidance | Workplace context skill | Included in source |
+| SharePoint documents | Connection route to be selected | Not connected or tested |
 
 These are Microsoft overlay defaults. Work IQ is optional and disabled by default in the shared
 catalog; Microsoft enables it. Toolbox Search remains a distinct discovery tool.
+Skills provide instructions, not data access, and must be published with the Toolbox before use.
+SharePoint requires
+an authorized retrieval connection before it can be tested; adding a table row does not connect it.
 Enabled in source does not mean published or authenticated: both IQ integrations
 require existing project connections before a strict Microsoft build can succeed.
 
-On 2026-11-11, `microsoft-toolbox` version 3 was published and independently verified as
-the default. The stable APIM route is unchanged. This source cleanup does not change that published
-immutable version or its attached skills. Work IQ's last runtime check returned `CONSENT_REQUIRED`, blocking
-tool discovery; publication does not establish successful delegated access or end-to-end
-operation through APIM.
+Work IQ requires delegated-user consent. A `CONSENT_REQUIRED` response can block tool discovery;
+publication alone does not establish successful delegated access or end-to-end operation through APIM.
 
 ### Enterprise Knowledge
 
@@ -144,7 +147,7 @@ actual target and authentication before publication. Missing Foundry IQ variable
 block a strict Microsoft build when Foundry IQ is enabled. Disabled optional capabilities require
 no connection variables.
 
-This changes source configuration only. An existing Toolbox remains on its current immutable
+Editing source configuration does not update a live deployment. An existing Toolbox remains on its current immutable
 version until a new version is created, tested through its version-specific endpoint, and promoted.
 APIM's stable Toolbox backend URL does not need to change.
 
@@ -452,7 +455,10 @@ async with toolbox:
     await ResponsesHostServer(agent).run_async()
 ```
 
-For a prompt that requires private policy information, the tool execution flow is:
+#### This Example: Only the Toolbox Is Behind APIM
+
+The runnable example connects directly to the model through `FoundryChatClient`. Only MCP
+requests to the Toolbox pass through APIM. For a prompt that requires private policy information:
 
 ```mermaid
 sequenceDiagram
@@ -475,6 +481,46 @@ sequenceDiagram
     Model-->>Agent: Grounded answer
     Agent-->>User: Answer with citations
 ```
+
+#### Citadel Entities: Model and Toolbox Behind APIM
+
+For entities using Citadel to govern both models and tools, the agent sends model requests to
+Citadel's model API in APIM and MCP requests to its Toolbox API in APIM. These are separate API
+routes, even when hosted by the same gateway. The model returns a tool-call request; the agent
+executes it through the Toolbox route and sends the result back through the model route.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent
+    participant APIM as Citadel APIM
+    participant Model as Model deployment
+    participant Toolbox as Foundry Toolbox
+    participant Search as Azure AI Search
+    User->>Agent: Ask a policy question
+    Agent->>APIM: Model API - prompt plus available Toolbox tools
+    APIM->>Model: Forward using configured model backend authentication
+    Model-->>APIM: Request a relevant tool
+    APIM-->>Agent: Tool-call request
+    Agent->>APIM: Toolbox MCP API - execute requested tool
+    APIM->>Toolbox: Forward with APIM managed-identity token
+    Toolbox->>Search: Use the configured project connection
+    Search-->>Toolbox: Grounded documents and citations
+    Toolbox-->>APIM: Tool result
+    APIM-->>Agent: MCP result
+    Agent->>APIM: Model API - conversation plus tool result
+    APIM->>Model: Forward using configured model backend authentication
+    Model-->>APIM: Grounded answer
+    APIM-->>Agent: Model response
+    Agent-->>User: Answer with citations
+```
+
+This second flow describes the Citadel entity route, not additional functionality configured by
+this sample. Running it requires a Citadel model API, its client-compatible endpoint and
+authentication, and the appropriate model access contract in addition to Toolbox access. The
+model and Toolbox routes can have different consumer credentials and backend identities; a
+Toolbox subscription key does not automatically grant model access. This example configures
+only the Toolbox behind APIM and does not configure or test the model-through-APIM route.
 
 The example targets the default read-only Toolbox. Tool approval metadata is returned to the client,
 but the Toolbox endpoint does not enforce approval by itself. Before enabling state-changing tools,
