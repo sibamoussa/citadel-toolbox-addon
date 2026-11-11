@@ -10,6 +10,8 @@ $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) (
 )
 $null = New-Item -ItemType Directory -Path $temporaryDirectory
 $global:CitadelApimRegistrationTestState = @{}
+$clientId = '8bc8b977-050d-42a1-a619-2ea5fbcafb1f'
+$productId = 'TOOL-ToolboxDemo-Publisha7e840b1f8f2-DEV'
 
 function az {
     $state = $global:CitadelApimRegistrationTestState
@@ -22,12 +24,39 @@ function az {
             return
         }
         $identity = if ($state.Mode -eq 'no-identity') { @{} } else { @{ principalId = 'test-id' } }
+        if ($state.Mode -in @('uami-success', 'uami-product-success', 'product-read-failure')) {
+            $identity = @{
+                userAssignedIdentities = @{
+                    '/identities/other' = @{ clientId = '11111111-1111-1111-1111-111111111111' }
+                    '/identities/backend' = @{ clientId = $clientId; principalId = 'uami-principal' }
+                }
+            }
+        }
+        if ($state.Mode -eq 'uami-mismatch') {
+            $identity.userAssignedIdentities = @{
+                '/identities/other' = @{ clientId = '11111111-1111-1111-1111-111111111111' }
+            }
+        }
         $tier = if ($state.Mode -eq 'consumption') { 'Consumption' } else { 'StandardV2' }
         return @{
             sku = @{ name = $tier }
             identity = $identity
             gatewayUrl = 'https://gateway.example.test'
-        } | ConvertTo-Json
+        } | ConvertTo-Json -Depth 6
+    }
+    if ($operation -eq 'rest --method GET') {
+        $expectedUrl = "https://management.azure.com/subscriptions/test-subscription/resourceGroups/test-rg/providers/Microsoft.ApiManagement/service/test-apim/products/${productId}?api-version=2024-05-01"
+        if ($args[([array]::IndexOf($args, '--url') + 1)] -ne $expectedUrl) {
+            throw 'Unexpected product lookup URL.'
+        }
+        if ($args[([array]::IndexOf($args, '--subscription') + 1)] -ne 'test-subscription') {
+            throw 'Product lookup must use the requested subscription.'
+        }
+        if ($state.Mode -eq 'product-read-failure') { $global:LASTEXITCODE = 1 }
+        return
+    }
+    if ($operation -notin @('deployment group validate', 'deployment group create')) {
+        throw "Unexpected Azure command: $operation"
     }
     if (($operation -eq 'deployment group validate' -and $state.Mode -eq 'validation-failure') -or
         ($operation -eq 'deployment group create' -and $state.Mode -eq 'deployment-failure')) {
@@ -38,7 +67,35 @@ function az {
 $cases = @(
     @{ Mode = 'what-if'; Error = $null; Calls = 0 },
     @{ Mode = 'success'; Error = $null; Calls = 3 },
+    @{ Mode = 'custom-path'; ApiPath = 'mcp/citadel-toolbox'; Error = $null; Calls = 3 },
     @{ Mode = 'generic-backend'; Error = $null; Calls = 3 },
+    @{ Mode = 'uami-success'; Uami = $true; Error = $null; Calls = 3 },
+    @{ Mode = 'uami-product-success'; Uami = $true; Product = $true; Error = $null; Calls = 4 },
+    @{ Mode = 'product-success'; Product = $true; Error = $null; Calls = 4 },
+    @{
+        Mode = 'uami-mismatch'; Uami = $true; Calls = 1
+        Error = 'The requested backend client ID is not a user-assigned identity attached to APIM.'
+    },
+    @{
+        Mode = 'uami-missing'; Uami = $true; Calls = 1
+        Error = 'The requested backend client ID is not a user-assigned identity attached to APIM.'
+    },
+    @{
+        Mode = 'product-read-failure'; Uami = $true; Product = $true; Calls = 2
+        Error = 'Unable to read the existing APIM product. Check ProductId and read permissions.'
+    },
+    @{
+        Mode = 'invalid-client-id'; Calls = 0
+        Error = 'Unable to generate the APIM registration template.'
+    },
+    @{
+        Mode = 'client-without-audience'; Uami = $true; Calls = 0
+        Error = 'Unable to generate the APIM registration template.'
+    },
+    @{
+        Mode = 'invalid-product'; Calls = 0
+        Error = 'Unable to generate the APIM registration template.'
+    },
     @{ Mode = 'read-failure'; Error = 'Unable to read the existing APIM instance.'; Calls = 1 },
     @{
         Mode = 'no-identity'
@@ -85,17 +142,30 @@ try {
             OutputPath = $outputPath
         }
         if ($PythonExecutable) { $parameters.PythonExecutable = $PythonExecutable }
-        if ($case.Mode -eq 'what-if') { $parameters.WhatIf = $true }
+        if ($case.ApiPath) { $parameters.ApiPath = $case.ApiPath }
+        if ($case.Uami) { $parameters.BackendClientId = $clientId.ToUpperInvariant() }
+        if ($case.Product) { $parameters.ProductId = $productId }
+        if ($case.Mode -eq 'what-if') {
+            $parameters.WhatIf = $true
+            $parameters.BackendClientId = $clientId
+            $parameters.ProductId = $productId
+        }
         if ($case.Mode -eq 'generic-backend') { $parameters.BackendAudience = '' }
+        if ($case.Mode -eq 'invalid-client-id') { $parameters.BackendClientId = 'invalid' }
+        if ($case.Mode -eq 'client-without-audience') { $parameters.BackendAudience = '' }
+        if ($case.Mode -eq 'invalid-product') { $parameters.ProductId = 'bad/product' }
         $actualError = $null
-        try { & $registrationScript @parameters } catch { $actualError = $_.Exception.Message }
+        $registrationOutput = @()
+        try { $registrationOutput = @(& $registrationScript @parameters 6>&1) } catch { $actualError = $_.Exception.Message }
         if ($actualError -ne $case.Error) {
             throw "$($case.Mode): expected error '$($case.Error)', got '$actualError'"
         }
         if ($state.Calls.Count -ne $case.Calls) {
             throw "$($case.Mode): expected $($case.Calls) Azure commands, got $($state.Calls.Count)"
         }
-        $expectedOrder = @('apim show --name', 'deployment group validate', 'deployment group create')
+        $expectedOrder = @('apim show --name')
+        if ($case.Product) { $expectedOrder += 'rest --method GET' }
+        $expectedOrder += @('deployment group validate', 'deployment group create')
         for ($index = 0; $index -lt $state.Calls.Count; $index++) {
             if ($state.Calls[$index] -ne $expectedOrder[$index]) {
                 throw "$($case.Mode): unexpected Azure command order"
@@ -104,7 +174,7 @@ try {
         if ($case.Mode -eq 'what-if') {
             if (Test-Path $outputPath) { throw 'WhatIf must not write a template.' }
         }
-        if ($case.Mode -in @('success', 'generic-backend')) {
+        if ($null -eq $case.Error -and $case.Mode -ne 'what-if') {
             $template = Get-Content $outputPath -Raw | ConvertFrom-Json
             if ($template.resources[1].properties.type -ne 'mcp') {
                 throw 'Expected a native MCP API.'
@@ -117,10 +187,35 @@ try {
             if ($case.Mode -eq 'generic-backend' -and $null -ne $managedIdentity) {
                 throw 'An empty audience must disable managed-identity policy generation.'
             }
+            if ($case.Uami) {
+                if ($managedIdentity.GetAttribute('client-id') -cne $parameters.BackendClientId) {
+                    throw 'Expected the requested UAMI client ID in the policy.'
+                }
+            }
+            elseif ($managedIdentity -and $managedIdentity.HasAttribute('client-id')) {
+                throw 'System identity policy must not specify a client ID.'
+            }
+            $expectedResourceCount = if ($case.Product) { 4 } else { 3 }
+            if ($template.resources.Count -ne $expectedResourceCount) {
+                throw "Expected $expectedResourceCount template resources."
+            }
+            if ($case.Product -and
+                $template.resources[3].name -ne "test-apim/$productId/citadel-toolbox") {
+                throw 'Expected the existing product association.'
+            }
+            $expectedPath = if ($case.ApiPath) { $case.ApiPath } else { 'citadel-toolbox' }
+            if ($template.resources[1].properties.path -ne $expectedPath -or
+                $template.outputs.mcpPath.value -ne "/$expectedPath") {
+                throw 'Expected the native MCP endpoint path.'
+            }
+            if ('Registered MCP server: https://gateway.example.test/' + $expectedPath -notin
+                @($registrationOutput | ForEach-Object { "$_" })) {
+                throw 'Expected the registered endpoint to match the configured API path.'
+            }
         }
         Write-Output "PASS: $($case.Mode)"
     }
-    Write-Output 'All 8 APIM registration script checks passed. No Azure calls were made.'
+    Write-Output "All $($cases.Count) APIM registration script checks passed. No Azure calls were made."
 }
 finally {
     Remove-Item $temporaryDirectory -Recurse -Force

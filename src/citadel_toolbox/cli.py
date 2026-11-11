@@ -65,6 +65,13 @@ def build_parser() -> argparse.ArgumentParser:
     apim_parser.add_argument(
         "--backend-audience", help="Use APIM managed identity for backend auth."
     )
+    apim_parser.add_argument(
+        "--backend-client-id",
+        help="Attached user-assigned identity client UUID (requires audience).",
+    )
+    apim_parser.add_argument(
+        "--product-id", help="Existing APIM product ID to associate with the API."
+    )
     apim_parser.add_argument("--output", type=Path, required=True)
     return parser
 
@@ -149,6 +156,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 api_id=args.api_id,
                 path=args.path,
                 backend_audience=args.backend_audience,
+                backend_client_id=args.backend_client_id,
+                product_id=args.product_id,
             )
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(template, indent=2) + "\n", encoding="utf-8")

@@ -31,14 +31,15 @@ Existing process environment variables take precedence over `.env` values.
 2. In APIM, open **Subscriptions**, create a subscription scoped to the registered **API**, and
   securely obtain its primary or secondary key. Use a separate subscription for each consumer.
   Creating or registering the MCP API does not automatically create a consumer subscription.
-3. Configure the example with the gateway URL printed by registration, ending in
-  `/citadel-toolbox/mcp`. Use your configured path or custom gateway domain when different.
+3. Configure the example with the gateway URL printed by registration, normally ending in
+  `/citadel-toolbox`. The native endpoint is exactly the configured API path, with no automatic
+  `/mcp` suffix. Use your configured path or custom gateway domain when different.
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
 AZURE_AI_MODEL_DEPLOYMENT_NAME=<model-deployment-name>
 TOOLBOX_CONNECTION_MODE=apim
-TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox/mcp
+TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox
 APIM_SUBSCRIPTION_KEY=<api-scoped-subscription-key>
 ```
 
@@ -133,7 +134,7 @@ Starting the Responses host verifies discovery, not the outcome of every tool or
 | APIM 401/403 | Subscription is active and scoped to the correct API; inspect any inherited authorization policies. |
 | Backend 401/403 | APIM's system-assigned identity, Foundry token audience, project RBAC, and connection permissions. |
 | Model authorization failure | Agent developer/workload identity and model project access, independent of the APIM key. |
-| 404 | Gateway path and final `/mcp`, not the original Foundry URL. |
+| 404 | Gateway URL must exactly match the configured API path; do not append `/mcp` automatically or use the original Foundry URL. |
 | Timeout or discovery failure | APIM-to-Foundry networking, response buffering/logging, and MCP compatibility. |
 | Tools work but skills are missing | Skills are MCP Resources; this example only wires callable tools. |
 

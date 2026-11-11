@@ -3,6 +3,12 @@
 Use the [README setup workflow](../README.md#part-1-create-and-publish-the-toolbox) for the primary workflow. This checklist
 captures the decisions an entity owner must approve before deployment.
 
+Start with the [per-tool prerequisite guide](tool-prerequisites.md). If the entity has no Search
+index, complete its [starting-without-an-index workflow](tool-prerequisites.md#starting-without-an-index)
+first: this repository does not supply documents or create/populate the index. Validate the
+integrated vectorizer required by native hybrid Search separately from Foundry IQ semantic retrieval.
+Disable optional Work IQ before building if its OAuth and delegated-user prerequisites are not ready.
+
 ## Inputs
 
 Collect these non-secret values:
@@ -16,6 +22,34 @@ Collect these non-secret values:
 
 Credentials belong in Foundry project connections or an approved secret store, never in an overlay
 or `.env` file.
+
+## Optional Knowledge Provisioning
+
+Use the exact generic parameterized invocation in
+[Optional Knowledge Initialization](../README.md#optional-knowledge-initialization) when the entity
+needs the Search knowledge source/base and Search/Foundry IQ project connections created. This is
+an explicit separate step using
+[scripts/Initialize-ToolboxKnowledge.ps1](../scripts/Initialize-ToolboxKnowledge.ps1), not an implicit
+part of setup or publishing. `-WhatIf` performs no authentication, network calls, or file writes.
+
+The Foundry project, Search service, populated index, and its semantic configuration must already
+exist; no service, index, ingestion, model, roles, or Work IQ connection is provisioned. The script
+supports only explicitly acknowledged `-UseSearchApiKey`: a broad existing Search admin credential
+is retrieved through ARM into process memory and stored in Foundry connections. It is not a scoped
+query key or delegated identity. Identity-based provisioning is out of scope, and there is no silent
+fallback. The operator needs Search admin-key-list and project-connection read/create permissions.
+
+Only retrievable actual fields from the supported source-field list are included. Existing source,
+base, and connection settings must match; drift is refused. Conditional creates fail on races;
+non-404 lookup failures never mean missing. A failed run can leave partial resources; investigate
+and rerun without deleting or overwriting existing resources. Connection credentials are never
+fetched or rotated, so a successful reuse still needs runtime authentication verification.
+
+Manually fill the entity's ignored `.env` with the returned nonsecret connection IDs, index name,
+and knowledge-base MCP URL, using the entity's `.env.example` variable names. Preserve independent
+Work IQ references and complete delegated consent when enabled. The initializer never changes
+`.env` or an existing immutable Toolbox. Build and publish afterward using the commands below;
+use the version workflow for an existing Toolbox name.
 
 ## Configure and Publish
 
@@ -59,8 +93,10 @@ Build or publish an already configured entity directly when scripting the workfl
     -ToolboxName "$entity-toolbox"
 ```
 
-The publish script provisions missing core skills and creates the first Toolbox version. It does not
-provision the Foundry project, Search index, knowledge base, or project connections.
+The publish script provisions missing core skills and creates the first Toolbox version;
+`toolbox_search` is a built-in tool, not a separately provisioned backend. Publication does not
+provision the Foundry project, Search service/index, knowledge source/base, or project connections.
+The optional initializer above owns only the knowledge source/base and the two key-based connections.
 
 Before connecting agents, verify:
 

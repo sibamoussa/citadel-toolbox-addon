@@ -35,7 +35,33 @@ The overlay enables Azure AI Search, Microsoft Foundry IQ, Work IQ, and distinct
 The shared catalog supplies enterprise-grounding; the Microsoft overlay adds workplace-context
 for authorized Work IQ retrieval and consent handling. Work IQ is optional and disabled by
 default in the shared catalog, but enabled for Microsoft. Both IQ integrations require existing,
-compatible project connections; the setup does not create them or obtain delegated-user consent.
+compatible project connections; guided setup does not create them or obtain delegated-user consent.
+
+## Optional Search and Foundry IQ Provisioning
+
+Before guided setup, follow the complete generic invocation in
+[Optional Knowledge Initialization](../README.md#optional-knowledge-initialization) to run
+[Initialize-ToolboxKnowledge.ps1](../scripts/Initialize-ToolboxKnowledge.ps1). Provide all twelve
+explicit resource/name parameters, including the actual index semantic configuration. Preview with
+`-WhatIf` for no authentication, network calls, or file writes; explicitly pass `-UseSearchApiKey`
+only after approving API-key authentication.
+
+The script creates only the Search knowledge source/base and the Search/Foundry IQ project
+connections. The Foundry project, Search service, populated index, semantic configuration, and
+model deployment already exist. It does not ingest documents, deploy a model, or provision Work IQ.
+It reads an existing broad Search admin key into memory via ARM and stores that credential in both
+Foundry connections; it does not generate keys, write secret files, or support identity-based
+provisioning. There is no silent authentication fallback. Existing settings must match; drift and
+conditional-create races fail without overwrite. Existing connection credentials are never fetched
+or rotated, so runtime retrieval must still be checked even after a successful reuse.
+
+Manually fill `MICROSOFT_SEARCH_CONNECTION_ID`, `MICROSOFT_SEARCH_INDEX_NAME`,
+`MICROSOFT_FOUNDRY_IQ_CONNECTION_ID`, and `MICROSOFT_FOUNDRY_IQ_MCP_URL` in the ignored
+`entities/microsoft/.env` from the returned nonsecret object. The initializer never edits `.env`.
+Retain the independently provisioned `WORK_IQ_PROJECT_CONNECTION_ID` and resolve delegated consent.
+Then use Advanced Build and Advanced Publish below with a new Toolbox name, or follow the version
+workflow for the existing Toolbox. Initialization does not change an immutable published Toolbox.
+Publication creates missing skills; built-in `toolbox_search` needs no backend provisioning.
 
 Use `-Reconfigure` to update Search values in an existing `.env`, or `-SkipPublish` to stop after strict local
 validation. These values are resource references, not credentials; Foundry stores authentication.

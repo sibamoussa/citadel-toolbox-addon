@@ -73,9 +73,11 @@ flowchart LR
     Foundry --> Discovery[Toolbox Search]
 ```
 
-This repository does **not** create the Foundry project, model deployment, Search index, knowledge
-base, or project connections. Those resources must already exist. It creates the governed
-Toolbox definition that joins them and publishes that definition to Foundry.
+This repository does **not** create the Foundry project, model deployment, Search service, or Search
+index, and does not ingest documents. The optional
+[knowledge initializer](scripts/Initialize-ToolboxKnowledge.ps1) creates a knowledge source, knowledge
+base, and two project connections against those prerequisites. Publication separately creates skills
+and the governed Toolbox definition that joins the capabilities.
 
 ### Register the Toolbox in APIM
 
@@ -88,15 +90,15 @@ registration commands, security boundaries, and a VS Code client example.
 
 ## What Is Included
 
-| Capability | Provider | Microsoft Default |
-| --- | --- | --- |
-| Enterprise knowledge | Azure AI Search | Enabled |
-| Policy knowledge | Microsoft Foundry IQ MCP | Enabled |
-| Tool discovery | Toolbox Search | Enabled |
-| Employee and M365 context | Work IQ preview | Enabled |
-| Grounded knowledge guidance | Enterprise grounding skill | Included in source |
-| Authorized workplace guidance | Workplace context skill | Included in source |
-| SharePoint documents | Connection route to be selected | Not connected or tested |
+| Type | Capability | Provider or Skill | Microsoft Default |
+| --- | --- | --- | --- |
+| Tool | Enterprise knowledge | Azure AI Search | Enabled |
+| Tool | Policy knowledge | Microsoft Foundry IQ MCP | Enabled |
+| Tool | Tool discovery | Toolbox Search | Enabled |
+| Tool | Employee and M365 context | Work IQ preview | Enabled |
+| Skill | Ground answers in Search or Foundry IQ evidence, cite sources, and handle insufficient evidence | [enterprise-grounding](skills/enterprise-grounding/SKILL.md) | Enabled in shared catalog; included in source |
+| Skill | Retrieve authorized Work IQ context, respect delegated permissions, and handle consent failures | [workplace-context](skills/workplace-context/SKILL.md) | Enabled in Microsoft overlay; included in source |
+| Planned integration | SharePoint documents | Connection route to be selected | Not connected or tested |
 
 These are Microsoft overlay defaults. Work IQ is optional and disabled by default in the shared
 catalog; Microsoft enables it. Toolbox Search remains a distinct discovery tool.
@@ -128,7 +130,9 @@ Microsoft Foundry IQ is enabled in
 
 Foundry IQ exposes an existing Azure AI Search knowledge base as an MCP server with the
 `knowledge_base_retrieve` tool. Configure a dedicated MCP project connection in the same Foundry
-project as the Toolbox, using the knowledge base's complete endpoint:
+project as the Toolbox, using the knowledge base's complete endpoint. The optional
+[knowledge initialization workflow](#optional-knowledge-initialization) can create this base and
+connection for an existing index:
 
 ```text
 https://<search-service>.search.windows.net/knowledgebases/<knowledge-base>/mcp?api-version=2026-08-01-preview
@@ -235,6 +239,11 @@ During publication, the script performs these operations in order:
 
 ## Prerequisites
 
+**Read the [per-tool prerequisite and readiness guide](docs/tool-prerequisites.md) before setup.**
+This is a bring-your-own-data deployment, not a complete document-to-Toolbox installer. The example
+`policy-index` is not included: users without an index must create Search, design and populate an
+index from their own documents, and validate retrieval first.
+
 - Windows PowerShell 7 or later
 - Python 3.11 or newer
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
@@ -243,9 +252,107 @@ During publication, the script performs these operations in order:
 - A project connection to Azure AI Search and an existing index
 
 The deployment identity must belong to the tenant that owns the project and have permission to use
-the project and its connections. This add-on does not create the Foundry project, Search index,
-knowledge base, or project connections. The Microsoft overlay additionally requires existing
-Microsoft Foundry IQ and Work IQ project connections.
+the project and its connections. The Foundry project, Search service, populated Search index, and
+model deployment remain prerequisites. Use existing connections or explicitly run the optional
+initializer below for Search and Foundry IQ. Work IQ connections and delegated consent remain
+separate prerequisites; neither initialization nor publication provisions them.
+
+| Enabled capability | Additional prerequisite |
+| --- | --- |
+| Native Search | Populated index with semantic configuration and a compatible integrated vectorizer for the current hybrid query mode; stored document vectors alone are insufficient |
+| Foundry IQ | Knowledge source/base and authenticated MCP connection; the initializer's minimal semantic path does not require native Search's vectorizer |
+| Toolbox Search | Healthy published sources; discovery is not a retrieval test |
+| Work IQ (optional) | M365 entitlement, approved OAuth setup, delegated-user consent/flow, and compatible networking; APIM managed identity is not user delegation |
+| Skills | Published references and explicit resource loading by the consuming agent |
+
+The Microsoft overlay enables Work IQ. For policy-only use, follow the
+[disable-Work-IQ configuration](docs/tool-prerequisites.md#work-iq-optional-preview); unresolved
+connections or consent can block discovery of other sources. SharePoint is not connected by default.
+The guide also covers [APIM and agent prerequisites](docs/tool-prerequisites.md#shared-runtime-and-apim-requirements)
+and the checks required before calling a deployment ready.
+
+## Optional Knowledge Initialization
+
+[scripts/Initialize-ToolboxKnowledge.ps1](scripts/Initialize-ToolboxKnowledge.ps1) is a separate,
+opt-in provisioning step, not part of guided setup or publication. It creates only:
+
+- A Search `searchIndex` knowledge source over an existing index and semantic configuration.
+- A knowledge base using `minimal` reasoning and `extractiveData`, with no retrieval model.
+- A Foundry `CognitiveSearch` / `ApiKey` project connection to the Search endpoint.
+- A Foundry `RemoteTool` / `CustomKeys` project connection to the complete knowledge-base MCP URL.
+
+This script supports **API-key authentication only**, for a service where API keys are enabled.
+`-UseSearchApiKey` explicitly acknowledges that a **broad Search admin credential** will be read and
+stored in the two Foundry connections. This is not a least-privilege query credential or an
+end-user identity flow. Prefer an independently configured identity-based integration when supported;
+the script never silently falls back between authentication modes or changes an existing mode.
+The admin key is retrieved through ARM `listAdminKeys`, not generated or rotated, and is held only
+in process memory before being sent to Foundry. No secrets are passed as CLI arguments, printed,
+written to temporary files, or written to `.env`. Do not enable external request tracing,
+PowerShell tracing, or body-logging proxies while running credential-bearing provisioning.
+
+Run with PowerShell 7 and an already authenticated Azure CLI identity in the owning tenant. The
+identity needs permission to list Search admin keys and read/create project connections, plus network
+access to ARM and the Search data plane. The Search service must support the preview knowledge APIs,
+with semantic search already configured on the existing populated index. No service, index,
+ingestion pipeline, model, role assignment, or Work IQ resource is created.
+
+Replace every placeholder, then run from the repository root:
+
+```powershell
+$knowledgeParameters = @{
+    SubscriptionId = '<subscription-uuid>'
+    ProjectResourceGroup = '<project-resource-group>'
+    AccountName = '<foundry-account>'
+    ProjectName = '<foundry-project>'
+    SearchResourceGroup = '<search-resource-group>'
+    SearchServiceName = '<search-service>'
+    SearchIndexName = '<existing-index>'
+    SearchConnectionName = '<search-connection>'
+    KnowledgeSourceName = '<knowledge-source>'
+    KnowledgeBaseName = '<knowledge-base>'
+    FoundryIqConnectionName = '<foundry-iq-connection>'
+    SemanticConfigurationName = '<existing-semantic-configuration>'
+}
+./scripts/Initialize-ToolboxKnowledge.ps1 @knowledgeParameters -WhatIf
+$knowledge = ./scripts/Initialize-ToolboxKnowledge.ps1 @knowledgeParameters -UseSearchApiKey
+$knowledge
+```
+
+`-WhatIf` validates input syntax but performs **no authentication, network calls, or file writes**;
+it cannot validate remote prerequisites. A normal run reads the actual index, verifies the named
+semantic configuration, and chooses only retrievable, present fields from `id`, `title`, `content`,
+`source_file`, `source_path`, and `page_number` for `sourceDataFields`.
+All four resources are inspected before any creates. Existing managed settings must match, including
+connection target, category, authentication mode, and custom MCP metadata; drift is refused, not
+reconciled. Only HTTP 404 on an optional resource lookup means missing. A 403, network failure, missing
+index, or invalid semantic configuration stops the run. Conditional creates use `If-None-Match: *`;
+a conflict or failed precondition stops without overwriting or retrying. Partial creation is possible;
+inspect the resources and rerun after resolving the cause. The script does not delete resources.
+
+Existing connection credentials are never fetched or rotated. Matching metadata does not prove a
+stored key is current: validate runtime Search and Foundry IQ retrieval before publication.
+Errors report only the operation and HTTP status, never service response bodies.
+
+The result contains only nonsecret connection IDs, the MCP URL, and environment references. Manually
+fill the existing entity's ignored `.env` using its `.env.example`: replace `<PREFIX>` with the
+entity's uppercase prefix (for Microsoft, `MICROSOFT`), set the Search index name, and retain any
+Work IQ references required by its overlay. No `.env` is automatically changed. Then run:
+
+```powershell
+./scripts/Build-Toolbox.ps1 -Entity microsoft
+./scripts/Publish-Toolbox.ps1 -Entity microsoft `
+    -ProjectEndpoint 'https://<account>.services.ai.azure.com/api/projects/<project>' `
+    -ToolboxName '<new-toolbox-name>'
+```
+
+Publication creates missing skills; `toolbox_search` is a built-in Toolbox tool, not a separately
+provisioned backend. Existing immutable Toolboxes are unchanged by initialization. For an existing
+Toolbox name use [Operate Versions](#operate-versions), test the new version, and explicitly promote
+it. Work IQ still requires its own compatible connection and delegated consent.
+
+Run the initializer's Azure-independent tests with
+`pwsh -NoProfile -File ./tests/Test-InitializeToolboxKnowledge.ps1`.
 
 ## Part 1: Create and Publish the Toolbox
 
@@ -343,7 +450,8 @@ Part 1 creates the managed Toolbox and prints its backend consumer endpoint. Par
 **existing MCP server** in an existing APIM instance; it does not recreate the Toolbox or import
 the catalog YAML into APIM. The resulting API appears under **APIs > MCP servers**.
 
-Before registration, enable APIM's system-assigned managed identity, grant it permission to invoke
+Before registration, enable APIM's system-assigned managed identity or attach an existing
+user-assigned managed identity (UAMI), grant the selected identity permission to invoke
 the Foundry Toolbox, and ensure APIM can reach the endpoint. Use a supported APIM tier (not
 Consumption). Disable global and API-level response payload logging and avoid inherited policies
 that buffer MCP responses. See [the APIM integration guide](docs/apim-mcp.md) for the full
@@ -356,25 +464,44 @@ From the repository root, use the full consumer endpoint printed by Part 1:
     -SubscriptionId '<subscription-id>' `
     -ResourceGroup '<existing-apim-resource-group>' `
     -ApimName '<existing-apim-name>' `
+    -ApiId citadel-toolbox -ApiPath citadel-toolbox `
+    -BackendClientId '<attached-uami-client-id-uuid>' `
+    -ProductId '<existing-product-id>' `
     -BackendUrl 'https://<foundry-account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox>/mcp?api-version=v1'
 ```
 
+`-BackendClientId` and `-ProductId` are independent, optional arguments. Omit the client ID for
+the existing system-assigned identity behavior. A UAMI client ID must be a hyphenated UUID, not
+the principal/resource ID, and requires a backend audience (default `https://ai.azure.com`).
+Omit the product ID to leave product associations unchanged; otherwise use an existing product's
+resource segment ID, not its display name or full resource ID.
+
 Add `-WhatIf` to preview the target without writing files or calling Azure. The actual run generates
-an ARM template, checks APIM's tier and identity, validates the deployment, and creates or updates
+an ARM template, checks APIM's tier and the system identity or attached UAMI client ID,
+checks the existing product when specified, validates the deployment, and creates or updates
 a TLS-validated backend, a subscription-protected native MCP API, and a streaming-safe policy.
+An optional fourth resource associates the API with the existing product after API creation.
 It uses APIM's managed identity to authenticate to Foundry with audience `https://ai.azure.com`.
 This is a shared service identity, not delegated user authentication.
 
 The script prints the agent-facing URL, normally:
 
 ```text
-https://<apim-name>.azure-api.net/citadel-toolbox/mcp
+https://<apim-name>.azure-api.net/citadel-toolbox
 ```
 
-Create an API-scoped APIM subscription for the consumer, then configure an HTTP MCP client with
+The native MCP endpoint is exactly `-ApiPath`; no `/mcp` suffix is appended.
+With `-ApiPath citadel-toolbox`, consumers use `/citadel-toolbox`. To reproduce the actual
+original endpoint from the previous route deployment, set `-ApiPath 'mcp/citadel-toolbox'`
+and use `/mcp/citadel-toolbox`. No redirect or compatibility alias is created.
+The backend Foundry toolbox URL still requires its `/mcp` path.
+
+Use a valid API-scoped or associated product-scoped APIM subscription for the consumer,
+then configure an HTTP MCP client with
 this URL and the `Ocp-Apim-Subscription-Key` header. The guide includes a VS Code configuration
 that prompts for the key rather than storing it in source control. The script does not create
-subscriptions, grant Foundry roles, or implement agent-side approval. Reusing an API ID replaces
+products or subscriptions, attach identities, grant Foundry roles, or implement agent-side approval.
+Reusing an API ID replaces
 its backend configuration and API policy; use `-ApiId` and `-ApiPath` for separate entity routes.
 
 Before routing production traffic, verify MCP initialization, tool discovery, and a read-only
@@ -390,8 +517,14 @@ citadel-toolbox export-apim `
     --backend-url '<full-consumer-endpoint-from-part-1>' `
     --api-id citadel-toolbox --path citadel-toolbox `
     --backend-audience https://ai.azure.com `
+    --backend-client-id '<attached-uami-client-id-uuid>' `
+    --product-id '<existing-product-id>' `
     --output generated/apim/registration.json
 ```
+
+The client ID and product ID flags are optional. Without them the export still contains three
+resources. Export validates inputs locally; only the registration script checks identity attachment
+and product existence in Azure before deployment. Neither command grants roles.
 
 ## Connect an Agent
 
@@ -407,12 +540,12 @@ Run `./examples/python-agent/Setup.ps1`, then configure the example's ignored `.
 FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
 AZURE_AI_MODEL_DEPLOYMENT_NAME=<model-deployment-name>
 TOOLBOX_CONNECTION_MODE=apim
-TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox/mcp
+TOOLBOX_ENDPOINT=https://<apim-name>.azure-api.net/citadel-toolbox
 APIM_SUBSCRIPTION_KEY=<api-scoped-subscription-key>
 ```
 
 Create an active API-scoped subscription in APIM and obtain its key securely. Use the actual gateway
-URL printed by registration, including the final `/mcp`, but no query parameters. The registration
+URL printed by registration, exactly matching the configured API path, with no query parameters. The registration
 script does not create consumer subscriptions. Keep the key out of source control, prompts, browser
 code, and logs; inject it from your hosting secret store in production.
 
