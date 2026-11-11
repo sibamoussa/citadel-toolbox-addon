@@ -21,7 +21,7 @@ Follow this order for a first deployment:
     against your existing populated index. Configure every enabled source, or disable it.
 5. [Publish and validate the Toolbox](#validate-the-published-toolbox).
 6. [Register it in an existing APIM instance](#part-2-register-the-toolbox-in-apim).
-7. [Configure and run the Python agent](#connect-an-agent).
+7. [Connect an agent](#connect-an-agent): use the Foundry portal demo or the Python example.
 
 Already have a working Toolbox in APIM? Go directly to [Connect an Agent](#connect-an-agent).
 For subsequent releases, use [Operate Versions](#operate-versions), not the first-version publisher.
@@ -35,6 +35,7 @@ For subsequent releases, use [Operate Versions](#operate-versions), not the firs
 | Search and Foundry IQ connection provisioning | [Optional knowledge initialization](#optional-knowledge-initialization) |
 | Gateway registration, identities, and streaming | [APIM integration](docs/apim-mcp.md) |
 | Runnable agent, environment settings, and troubleshooting | [Python example](examples/python-agent/README.md) |
+| No-local-code agent demo in a Foundry spoke | [Foundry portal walkthrough](docs/foundry-portal-demo.md) |
 | Microsoft overlay configuration | [Microsoft entity example](docs/microsoft-entity-example.md) |
 | Design background | [Architecture](docs/architecture.md) |
 
@@ -567,6 +568,28 @@ resources. Export validates inputs locally; only the registration script checks 
 and product existence in Azure before deployment. Neither command grants roles.
 
 ## Connect an Agent
+
+Choose either client below. Both consume the same APIM-hosted Toolbox; neither creates another
+Toolbox or provisions its knowledge sources.
+
+| Demo | Client and model path | Walkthrough |
+| --- | --- | --- |
+| Foundry portal | Agent Playground in the consuming project; uses that agent's configured model, including its AI Gateway route when present | [Portal connection and demo script](docs/foundry-portal-demo.md) |
+| Python | Local Agent Framework server; model connects directly to Foundry using Entra authentication | [Python example](examples/python-agent/README.md) and commands below |
+
+### Foundry Portal Demo
+
+In the spoke project, open **Agents > your agent > Playground > Tools > Add** and select the remote
+**Model Context Protocol (MCP)** option. Do not select **Create toolbox** to connect to an existing one.
+Enter a unique name, the exact APIM MCP endpoint, and **Key-based** authentication. Add the credential
+pair `Ocp-Apim-Subscription-Key` and an authorized APIM subscription key, then connect and save.
+APIM registration alone does not automatically attach the Toolbox to a spoke agent.
+
+Use the [full portal walkthrough](docs/foundry-portal-demo.md) for field-by-field setup, ready-to-use
+agent instructions, discovery and policy-retrieval prompts, approvals, and trace checks. It also
+explains the model's separate authentication and why connected tools do not prove skills were loaded.
+
+### Python Agent Demo
 
 The [Python agent example](examples/python-agent/README.md) supports the APIM URL from Part 2
 using `MCPStreamableHTTPTool` and an `Ocp-Apim-Subscription-Key` header. New setup files default to

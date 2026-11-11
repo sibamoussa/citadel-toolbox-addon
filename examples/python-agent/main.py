@@ -24,8 +24,10 @@ async def main() -> None:
             agent = Agent(
                 client=client,
                 instructions=(
-                    "You are a Citadel assistant. Use the Toolbox for grounded answers, "
-                    "include source citations when available, and use enterprise sources."
+                    "Use citadel_toolbox for enterprise knowledge. "
+                    "Discover relevant capabilities with tool_search, then invoke them "
+                    "with call_tool. Cite returned sources and report tool failures "
+                    "honestly."
                 ),
                 tools=toolbox,
                 default_options={"store": False},

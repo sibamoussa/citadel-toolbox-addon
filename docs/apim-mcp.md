@@ -121,6 +121,11 @@ separately. Never expose an unauthenticated production backend that bypasses API
 
 ## Connect and Verify
 
+For a no-local-code demo in a consuming Foundry project's agent Playground, follow the
+[Foundry portal walkthrough](foundry-portal-demo.md). It shows the remote MCP connection dialog,
+key-based header configuration, agent instructions, and discovery/retrieval trace checks. Registering
+this API in APIM does not automatically attach it to a spoke agent or synchronize its tool catalog.
+
 The script prints the gateway endpoint, normally
 `https://<apim-name>.azure-api.net/citadel-toolbox`. Use the actual gateway URL when APIM has a
 custom domain. Merge the following example into your client's MCP configuration, substituting the
