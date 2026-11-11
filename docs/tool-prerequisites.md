@@ -14,7 +14,6 @@ dataset shipped with this repository. Do not reuse another customer's connection
 | Toolbox Search (`tool-discovery`) | Published Toolbox with healthy enabled sources | Compiler includes built-in `toolbox_search`; no separate service or index | `tool_search` discovers expected tools; then invoke a discovered tool separately |
 | Work IQ (`employee-context`, optional preview) | Supported M365 tenant/user entitlement, OAuth app/connection, consent, delegated identity flow, compatible networking | References an existing connection only | Authorized user retrieval succeeds and honors user permissions |
 | Skills | Local skill files, published skill references, client resource support | Publisher creates missing skills; existing skills require explicit update | MCP resources are available and the consuming agent actually loads the instructions |
-| SharePoint (not connected by default) | A deliberately configured indexed or remote SharePoint retrieval route and authorization | No SharePoint provisioning or ingestion | Authorized retrieval succeeds; unauthorized documents remain inaccessible |
 
 The shared catalog enables native Search and discovery, but disables Work IQ. The Microsoft overlay
 also enables Foundry IQ and Work IQ. **Enabled in YAML does not mean provisioned or working.**
@@ -125,13 +124,7 @@ This removes an optional source; it does not bypass authentication. Keep the rel
 Foundry IQ sources enabled and configured. Existing immutable versions do not change: create and
 test a new version, then explicitly promote it or use an isolated version-specific test route.
 
-## SharePoint and Skills
-
-SharePoint is not automatically included when Foundry IQ is enabled. Choose and configure either
-an indexed SharePoint source with ingestion and permission filtering, or a supported remote
-SharePoint route with its tenant, user-token, licensing/billing, and permission requirements.
-The current initializer creates only a Search-index source, not a SharePoint source. A connection
-elsewhere in the Foundry project is not automatically part of the Toolbox.
+## Skills
 
 Skills supply instructions, not data access or credentials. Verify published references through
 MCP resources and explicitly load/apply those resources in the consuming agent. Tool discovery

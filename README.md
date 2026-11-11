@@ -141,13 +141,10 @@ deployment needs a separate model API, client configuration, and access contract
 | Tool | Employee and M365 context | Work IQ preview | Enabled |
 | Skill | Ground answers in Search or Foundry IQ evidence, cite sources, and handle insufficient evidence | [enterprise-grounding](skills/enterprise-grounding/SKILL.md) | Enabled in shared catalog; included in source |
 | Skill | Retrieve authorized Work IQ context, respect delegated permissions, and handle consent failures | [workplace-context](skills/workplace-context/SKILL.md) | Enabled in Microsoft overlay; included in source |
-| Planned integration | SharePoint documents | Connection route to be selected | Not connected or tested |
 
 These are Microsoft overlay defaults. Work IQ is optional and disabled by default in the shared
 catalog; Microsoft enables it. Toolbox Search remains a distinct discovery tool.
 Skills provide instructions, not data access, and must be published with the Toolbox before use.
-SharePoint requires
-an authorized retrieval connection before it can be tested; adding a table row does not connect it.
 Enabled in source does not mean published or authenticated: both IQ integrations
 require existing project connections before a strict Microsoft build can succeed.
 
@@ -283,7 +280,7 @@ separate prerequisites; neither initialization nor publication provisions them.
 
 The Microsoft overlay enables Work IQ. For policy-only use, follow the
 [disable-Work-IQ configuration](docs/tool-prerequisites.md#work-iq-optional-preview); unresolved
-connections or consent can block discovery of other sources. SharePoint is not connected by default.
+connections or consent can block discovery of other sources.
 The guide also covers [APIM and agent prerequisites](docs/tool-prerequisites.md#shared-runtime-and-apim-requirements)
 and the checks required before calling a deployment ready.
 
