@@ -25,7 +25,7 @@ async def main() -> None:
                 client=client,
                 instructions=(
                     "You are a Citadel assistant. Use the Toolbox for grounded answers, "
-                    "include source citations when available, and do not call state-changing tools."
+                    "include source citations when available, and use enterprise sources."
                 ),
                 tools=toolbox,
                 default_options={"store": False},

@@ -11,9 +11,6 @@ tools:
   - id: employee-context
     enabled: true
 
-  - id: government-systems
-    enabled: false
-
   - id: foundry-iq
     enabled: true
     risk: read
@@ -24,12 +21,10 @@ tools:
       project_connection_id: ${MICROSOFT_FOUNDRY_IQ_CONNECTION_ID}
       require_approval: never
 
-  - id: approved-web-search
-    enabled: false
-
   - id: tool-discovery
     enabled: true
 
-  - id: workflow-actions
-    enabled: false
-# Enable actions only with a separate approval-gated MCP connection.
+skills:
+  - id: workplace-context
+    enabled: true
+    path: skills/workplace-context/SKILL.md

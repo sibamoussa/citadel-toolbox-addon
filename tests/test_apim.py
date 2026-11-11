@@ -33,22 +33,22 @@ def test_external_mcp_registration_preserves_full_endpoint() -> None:
     assert xml.find("inbound/set-query-parameter[@name='api-version']") is None
 
 
-def test_actions_have_separate_registration_and_managed_identity() -> None:
+def test_knowledge_mcp_has_custom_registration_and_managed_identity() -> None:
     template = build_apim_template(
         apim_name="example-gateway",
-        backend_url="https://actions.example.test/mcp",
-        api_id="citadel-actions",
-        path="government/actions",
-        backend_audience="api://government-actions",
+        backend_url="https://knowledge.example.test/mcp",
+        api_id="citadel-knowledge",
+        path="enterprise/knowledge",
+        backend_audience="api://enterprise-knowledge",
     )
     _, api, policy = template["resources"]
-    assert api["name"] == "example-gateway/citadel-actions"
-    assert api["properties"]["path"] == "government/actions"
+    assert api["name"] == "example-gateway/citadel-knowledge"
+    assert api["properties"]["path"] == "enterprise/knowledge"
     xml = ElementTree.fromstring(policy["properties"]["value"])
     assert xml.find("inbound/authentication-managed-identity").attrib == {
-        "resource": "api://government-actions"
+        "resource": "api://enterprise-knowledge"
     }
-    assert "'example-gateway', 'citadel-actions'" in policy["dependsOn"][0]
+    assert "'example-gateway', 'citadel-knowledge'" in policy["dependsOn"][0]
 
 
 @pytest.mark.parametrize(

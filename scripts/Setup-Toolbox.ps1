@@ -14,12 +14,6 @@ param(
 
     [string]$SearchIndexName,
 
-    [string]$McpUrl,
-
-    [string]$McpConnectionId,
-
-    [string[]]$AllowedDomain,
-
     [string]$ToolboxName,
 
     [switch]$Reconfigure,
@@ -85,7 +79,7 @@ Invoke-CheckedCommand -Command {
 } -FailureMessage 'Python 3.11 or newer is required.'
 
 Write-Host 'Installing the local package and validation dependencies...'
-Invoke-CheckedCommand -Command { & $venvPython -m pip install -e '.[dev,mcp]' --quiet } `
+Invoke-CheckedCommand -Command { & $venvPython -m pip install -e '.[dev]' --quiet } `
     -FailureMessage 'Unable to install Python dependencies.'
 
 $entityDirectory = Join-Path $root "entities\$Entity"
@@ -100,31 +94,17 @@ else {
 }
 
 $envFile = Join-Path $entityDirectory '.env'
-$hasConfigurationArguments = $SearchConnectionId -or $SearchIndexName -or $McpUrl -or `
-    $McpConnectionId -or $AllowedDomain
+$hasConfigurationArguments = $SearchConnectionId -or $SearchIndexName
 if ($Reconfigure -or $hasConfigurationArguments -or -not (Test-Path $envFile)) {
     $SearchConnectionId = Read-RequiredValue `
         -Prompt 'Full Azure AI Search project connection resource ID' -Value $SearchConnectionId
     $SearchIndexName = Read-RequiredValue -Prompt 'Existing Search index name' -Value $SearchIndexName
-    $McpUrl = Read-RequiredValue -Prompt 'Read-only MCP HTTPS endpoint' -Value $McpUrl
-    $McpConnectionId = Read-RequiredValue `
-        -Prompt 'Full read-only MCP project connection resource ID' -Value $McpConnectionId
-    if (-not $AllowedDomain) {
-        $domainInput = Read-RequiredValue `
-            -Prompt 'Approved web domains (comma-separated)' -Value ''
-        $AllowedDomain = @($domainInput -split ',' | ForEach-Object { $_.Trim() })
-    }
 
     $configureArguments = @(
         '-m', 'citadel_toolbox.cli', 'configure-entity', $Entity,
         '--search-connection-id', $SearchConnectionId,
-        '--search-index-name', $SearchIndexName,
-        '--mcp-url', $McpUrl,
-        '--mcp-connection-id', $McpConnectionId
+        '--search-index-name', $SearchIndexName
     )
-    foreach ($domain in $AllowedDomain) {
-        $configureArguments += @('--allowed-domain', $domain)
-    }
     & $venvPython @configureArguments
     if ($LASTEXITCODE -ne 0) { throw 'Unable to configure the entity.' }
 }

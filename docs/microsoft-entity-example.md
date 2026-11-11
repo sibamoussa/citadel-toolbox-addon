@@ -19,20 +19,37 @@ publishes.
 
 ## Collected Project References
 
-The guided workflow writes these resource references to ignored `entities/microsoft/.env`:
+Search configuration writes the first two values to ignored `entities/microsoft/.env`. Add the
+Microsoft Foundry IQ and Work IQ references required by this overlay before strict validation,
+following [the environment template](../entities/microsoft/.env.example):
 
 ```dotenv
 MICROSOFT_SEARCH_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<search-connection>
 MICROSOFT_SEARCH_INDEX_NAME=<existing-index-name>
-MICROSOFT_SYSTEMS_MCP_URL=https://<read-mcp-host>/mcp
-MICROSOFT_SYSTEMS_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<read-mcp-connection>
+MICROSOFT_FOUNDRY_IQ_MCP_URL=https://<search-service>.search.windows.net/knowledgebases/<knowledge-base>/mcp?api-version=2026-08-01-preview
+MICROSOFT_FOUNDRY_IQ_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<foundry-iq-mcp-connection>
+WORK_IQ_PROJECT_CONNECTION_ID=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>/connections/<work-iq-connection>
 ```
 
-The overlay enables Search, Microsoft-approved web domains, Toolbox Search, the read-only MCP
-connection, and all core skills. Work IQ and workflow actions remain disabled.
+The overlay enables Azure AI Search, Microsoft Foundry IQ, Work IQ, and distinct Toolbox Search.
+The shared catalog supplies enterprise-grounding; the Microsoft overlay adds workplace-context
+for authorized Work IQ retrieval and consent handling. Work IQ is optional and disabled by
+default in the shared catalog, but enabled for Microsoft. Both IQ integrations require existing,
+compatible project connections; the setup does not create them or obtain delegated-user consent.
 
-Use `-Reconfigure` to replace an existing `.env`, or `-SkipPublish` to stop after strict local
+Use `-Reconfigure` to update Search values in an existing `.env`, or `-SkipPublish` to stop after strict local
 validation. These values are resource references, not credentials; Foundry stores authentication.
+
+To configure the Search values directly for the existing entity:
+
+```powershell
+citadel-toolbox configure-entity microsoft `
+    --search-connection-id '<search-project-connection-resource-id>' `
+    --search-index-name '<existing-index-name>'
+```
+
+This command updates Search values and preserves existing IQ references in `.env`. For a new
+configuration, add the IQ references above before building or publishing.
 
 ## Advanced Build
 
@@ -42,8 +59,8 @@ Get-Content generated/microsoft/toolbox.yaml
 ```
 
 Compilation fails if `.env` is absent, incomplete, or still contains template placeholders. Confirm
-that Search and MCP appear under `connections`, built-in providers under `tools`, and all three
-skills under `skills`.
+that Search and the IQ project connections appear under `connections`, `toolbox_search` appears
+under `tools`, and both `enterprise-grounding` and `workplace-context` appear under `skills`.
 
 ## Advanced Publish
 
@@ -61,7 +78,12 @@ $projectEndpoint = 'https://<account>.services.ai.azure.com/api/projects/<projec
 The script creates missing core skills before creating version 1. Existing skills are reused; pass
 `-UpdateSkills` only when intentionally creating new skill versions.
 
-## 5. Validate and Connect
+## Validate and Connect
+
+On 2026-11-11, `microsoft-toolbox` version 3 was published and independently verified as the default.
+Editing the source catalog does not change its attached skills or connections. Work IQ's last
+runtime check returned `CONSENT_REQUIRED`, blocking tool discovery. Publication does not prove
+delegated access or successful end-to-end operation through APIM.
 
 Inspect the deployment and list versions:
 
@@ -78,8 +100,9 @@ finally {
 }
 ```
 
-Validate the version-specific MCP endpoint. Test citations, domain restrictions, MCP authorization,
-skill discovery, and the absence of write tools. Agents may then use:
+Validate the version-specific MCP endpoint. Test authorized Search and Foundry IQ retrieval with
+citations, Toolbox Search, skill discovery, and delegated Work IQ access. The direct backend
+consumer endpoint is:
 
 ```text
 {project-endpoint}/toolboxes/microsoft-toolbox/mcp?api-version=v1
@@ -87,13 +110,17 @@ skill discovery, and the absence of write tools. Agents may then use:
 
 To consume this endpoint from code, follow the runnable
 [Python Agent Framework example](../examples/python-agent/README.md). Set `TOOLBOX_ENDPOINT` to the
-URL above, configure the project endpoint and model deployment, then press **F5** in VS Code.
+URL above with `TOOLBOX_CONNECTION_MODE=foundry` for direct validation, configure the project
+endpoint and model deployment, then press **F5** in VS Code. For the governed APIM route, use
+`TOOLBOX_CONNECTION_MODE=apim`, the gateway URL, and an API-scoped subscription key. Neither route
+alone implements delegated Work IQ authentication.
 
-## Optional Changes
+## Work IQ Requirements
 
-To enable Work IQ, create its project connection, add an entity variable and overlay override, and
-confirm delegated-user and network requirements. To enable actions, deploy a separate action MCP
-service and identity, retain `require_approval: always`, and verify approval behavior end to end.
+Microsoft already enables Work IQ. Confirm its project connection, delegated-user consent, tenant
+policy, and network requirements. Work IQ preview does not support network-isolated Foundry
+projects. APIM's shared managed identity does not forward the user's identity; validate a supported
+delegated authentication flow separately and resolve `CONSENT_REQUIRED` before claiming readiness.
 
 For updates, promotion, and rollback, follow
 [Operate Versions](../README.md#operate-versions).

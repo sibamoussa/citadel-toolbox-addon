@@ -11,20 +11,3 @@ tools:
 
   - id: employee-context
     enabled: false
-
-  - id: government-systems
-    provider:
-      server_label: example-government-systems
-      server_url: ${EXAMPLE_GOVERNMENT_SYSTEMS_MCP_URL}
-      project_connection_id: ${EXAMPLE_GOVERNMENT_SYSTEMS_CONNECTION_ID}
-
-  - id: approved-web-search
-    provider:
-      filters:
-        allowed_domains:
-          - example.gov
-          - legislation.example.gov
-
-  - id: workflow-actions
-    enabled: false
-# Enable actions only with a separate approval-gated MCP connection.

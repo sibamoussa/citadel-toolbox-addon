@@ -56,7 +56,7 @@ function extractResponse(payload) {
   const texts = [];
   const tools = [];
   for (const item of payload.output || []) {
-    if (["mcp_call", "function_call", "web_search_call", "file_search_call"].includes(item.type)) {
+    if (["mcp_call", "function_call", "file_search_call"].includes(item.type)) {
       tools.push(item.name || item.server_label || item.type.replaceAll("_", " "));
     }
     if (item.type !== "message") continue;

@@ -7,6 +7,7 @@ import pytest
 from citadel_toolbox.compiler import (
     ConfigurationError,
     compile_bundle,
+    load_yaml,
     merge_bundle,
     render_toolbox,
     substitute_variables,
@@ -49,7 +50,7 @@ def test_overlay_merges_named_items_and_disables_core_tool() -> None:
             "metadata": {"description": "Entity A"},
             "tools": [
                 {"id": "knowledge", "enabled": False},
-                {"id": "web", "risk": "read", "provider": {"type": "web_search"}},
+                {"id": "discovery", "risk": "read", "provider": {"type": "toolbox_search"}},
             ],
         },
     )
@@ -58,7 +59,7 @@ def test_overlay_merges_named_items_and_disables_core_tool() -> None:
     assert [tool["id"] for tool in merged["tools"]] == [
         "knowledge",
         "create_request",
-        "web",
+        "discovery",
     ]
     assert merged["tools"][0]["enabled"] is False
 
@@ -132,7 +133,7 @@ def test_renderer_maps_connection_backed_tools() -> None:
             },
         },
         {
-            "id": "systems",
+            "id": "knowledge-mcp",
             "provider": {
                 "type": "mcp",
                 "project_connection_id": "/projects/demo/connections/read-mcp",
@@ -185,7 +186,7 @@ def test_compile_does_not_require_disabled_tool_variables(tmp_path) -> None:
     assert rendered["tools"] == []
 
 
-def test_microsoft_overlay_enables_iq_connections_without_government_mcp() -> None:
+def test_microsoft_overlay_has_exact_remaining_sources_and_skills() -> None:
     root = Path(__file__).resolve().parents[1]
     bundle, rendered = compile_bundle(
         root / "catalog/core.yaml",
@@ -203,9 +204,15 @@ def test_microsoft_overlay_enables_iq_connections_without_government_mcp() -> No
     )
 
     tools = {tool["id"]: tool for tool in bundle["tools"]}
-    assert "government-systems" not in tools
-    assert "approved-web-search" not in tools
-    assert "foundry-iq" in tools
+    assert set(tools) == {
+        "enterprise-knowledge", "employee-context", "foundry-iq", "tool-discovery",
+    }
+    assert [skill["id"] for skill in bundle["skills"]] == [
+        "enterprise-grounding", "workplace-context",
+    ]
+    assert rendered["skills"] == [
+        {"name": "enterprise-grounding"}, {"name": "workplace-context"},
+    ]
     assert tools["employee-context"]["constraints"]["identity"] == "delegated-user"
     assert rendered["tools"] == [{"type": "toolbox_search"}]
     assert rendered["connections"] == [
@@ -215,30 +222,22 @@ def test_microsoft_overlay_enables_iq_connections_without_government_mcp() -> No
     ]
 
 
-def test_microsoft_overlay_ignores_legacy_weather_connection() -> None:
+def test_catalog_and_overlays_define_only_remaining_sources_and_skills() -> None:
     root = Path(__file__).resolve().parents[1]
-    bundle, rendered = compile_bundle(
-            root / "catalog/core.yaml",
-            root / "entities/microsoft/overlay.yaml",
-            variables={
-                "MICROSOFT_SEARCH_CONNECTION_ID": "/projects/demo/connections/search",
-                "MICROSOFT_SEARCH_INDEX_NAME": "policy-index",
-                "MICROSOFT_SYSTEMS_CONNECTION_ID": "/projects/demo/connections/weather-tool",
-                "MICROSOFT_SYSTEMS_MCP_URL": "https://weather.invalid/mcp",
-                "MICROSOFT_FOUNDRY_IQ_MCP_URL": "https://demo.search.windows.net/knowledgebases/policies/mcp?api-version=2026-08-01-preview",
-                "MICROSOFT_FOUNDRY_IQ_CONNECTION_ID": "/projects/demo/connections/foundry-iq",
-                "WORK_IQ_PROJECT_CONNECTION_ID": "/projects/demo/connections/work-iq",
-            },
-        )
-    assert {tool["id"] for tool in bundle["tools"]} == {
-        "enterprise-knowledge", "employee-context", "foundry-iq",
-        "tool-discovery"
+    core = load_yaml(root / "catalog/core.yaml")
+    assert {tool["id"] for tool in core["tools"]} == {
+        "enterprise-knowledge", "employee-context", "tool-discovery",
     }
-    assert rendered["connections"] == [
-        {"name": "search", "index": "policy-index"},
-        {"name": "work-iq"},
-        {"name": "foundry-iq"},
-    ]
+    assert [skill["id"] for skill in core["skills"]] == ["enterprise-grounding"]
+    assert {path.parent.name for path in (root / "skills").glob("*/SKILL.md")} == {
+        "enterprise-grounding", "workplace-context",
+    }
+    for entity, expected in (
+        ("example", {"enterprise-knowledge", "employee-context"}),
+        ("microsoft", {"enterprise-knowledge", "employee-context", "foundry-iq", "tool-discovery"}),
+    ):
+        overlay = load_yaml(root / f"entities/{entity}/overlay.yaml")
+        assert {tool["id"] for tool in overlay["tools"]} == expected
 
 
 @pytest.mark.parametrize("missing_variable", [

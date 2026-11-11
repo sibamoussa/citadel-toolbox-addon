@@ -11,9 +11,9 @@ Agent -> APIM native MCP server -> managed Foundry Toolbox -> configured tools a
 ```
 
 APIM is a gateway, not the Toolbox runtime. Publish the Toolbox first using the existing workflow.
-Pass the **Consumer endpoint** printed by the publish script, including `?api-version=v1`. Registering
-the reference government MCP server instead exposes only its sample government tools, not Search,
-Web Search, or the rest of the Foundry Toolbox.
+Pass the **Consumer endpoint** printed by the publish script, including `?api-version=v1`.
+Register the Toolbox endpoint rather than an individual downstream knowledge provider so consumers
+can discover the governed tools and skill resources.
 
 ## Prerequisites
 
@@ -57,13 +57,12 @@ deployment, then incrementally creates or updates three resources:
   `Foundry-Features: Toolboxes=V1Preview`. If the backend URL includes `api-version`, the policy
   overrides that query parameter with the configured value rather than trusting client input.
 
-The default API ID and path are `citadel-toolbox`. Use `-ApiId` and `-ApiPath` for separate entity or
-action registrations. Reusing an API ID **replaces that API's policy and backend configuration**;
+The default API ID and path are `citadel-toolbox`. Use `-ApiId` and `-ApiPath` for separate entity
+registrations. Reusing an API ID **replaces that API's policy and backend configuration**;
 choose a new ID if an existing API has hand-managed policies. The script does not create products
-or subscriptions, enable action tools, enforce approval in an agent, or change the Toolbox catalog.
-Use a distinct API-scoped subscription for each allowed consumer and do not give read-only consumers
-credentials for an action-enabled Toolbox. Add organization-specific rate limits, permitted-tool
-policies, and metadata-only auditing before production use.
+or subscriptions, enforce approval in an agent, or change the Toolbox catalog.
+Use a distinct API-scoped subscription for each allowed consumer. Add organization-specific rate
+limits, permitted-tool policies, and metadata-only auditing before production use.
 
 The registration uses APIM's `2025-09-01-preview` native MCP management contract. Confirm that API
 version is available in your target cloud. The backend must support MCP `2025-06-18` or later.

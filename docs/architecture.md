@@ -12,17 +12,24 @@ flowchart LR
     PA[Prompt agents] --> T
     HA[Hosted agents] --> T
     T --> K[Azure AI Search]
-    T --> W[Work IQ]
-    T --> R[Read MCP]
-    T --> A[Action MCP]
-    T --> X[Approved web]
+    T --> IQ[Microsoft Foundry IQ]
+    T --> W[Work IQ optional]
+    T --> D[Toolbox Search]
 ```
 
 ## Ownership Boundaries
 
 The platform team owns `catalog/core.yaml`, common skills, validation rules, and release versions.
-Each entity owns one overlay, Foundry project connections, approved domains, Search indexes, and
-connector implementations. Generated files are build artifacts and are not edited directly.
+Each entity owns one overlay, Foundry project connections, Search indexes, knowledge bases, and
+entity-scoping filters. Generated files are build artifacts and are not edited directly.
+
+Azure AI Search provides indexed enterprise retrieval; Microsoft Foundry IQ exposes knowledge-base
+retrieval through an MCP project connection. Toolbox Search is a distinct tool for discovering the
+available tools, not a document-retrieval provider. Work IQ supplies delegated employee and M365
+context: it is optional and disabled by default in the shared catalog, but enabled by the Microsoft
+overlay. Enterprise-grounding directs Search and Foundry IQ source selection and citations;
+the Microsoft-specific workplace-context skill guides authorized Work IQ retrieval and consent
+failure handling without treating workplace conversations as policy authority.
 
 The Toolbox consumer endpoint follows the promoted default version. Agents therefore keep a stable
 endpoint while platform operators test a version-specific endpoint and promote or roll back versions.

@@ -27,42 +27,6 @@ tools:
       type: work_iq_preview
       project_connection_id: ${WORK_IQ_PROJECT_CONNECTION_ID}
 
-  - id: government-systems
-    enabled: true
-    risk: read
-    provider:
-      type: mcp
-      server_label: government-systems
-      server_url: ${GOVERNMENT_SYSTEMS_MCP_URL}
-      project_connection_id: ${GOVERNMENT_SYSTEMS_MCP_CONNECTION_ID}
-      require_approval: never
-      tool_configs:
-        "*":
-          additional_search_text: HR finance CRM ERP cases applications status government services
-
-  - id: approved-web-search
-    enabled: true
-    risk: read
-    provider:
-      type: web_search
-      filters:
-        allowed_domains:
-          - ${APPROVED_WEB_DOMAIN}
-      require_approval: never
-
-  - id: workflow-actions
-    enabled: false
-    risk: write
-    require_approval: always
-    provider:
-      type: mcp
-      server_label: government-actions
-      server_url: ${GOVERNMENT_ACTIONS_MCP_URL}
-      project_connection_id: ${GOVERNMENT_ACTIONS_MCP_CONNECTION_ID}
-      tool_configs:
-        "*":
-          additional_search_text: submit create update request ticket application workflow transaction
-
   - id: tool-discovery
     enabled: true
     risk: read
@@ -73,9 +37,3 @@ skills:
   - id: enterprise-grounding
     enabled: true
     path: skills/enterprise-grounding/SKILL.md
-  - id: government-service-routing
-    enabled: true
-    path: skills/government-service-routing/SKILL.md
-  - id: safe-transaction
-    enabled: true
-    path: skills/safe-transaction/SKILL.md

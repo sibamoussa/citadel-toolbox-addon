@@ -6,8 +6,8 @@ references. Customers do not fork the catalog or store credentials in this repos
 
 ## Start Here: What Is a Toolbox?
 
-An AI agent can answer with a model, but it needs **tools** to retrieve private knowledge, search the
-web, or call business systems. Connecting every agent separately to every service duplicates code,
+An AI agent can answer with a model, but it needs **tools** to retrieve private knowledge and
+enterprise context. Connecting every agent separately to every service duplicates code,
 credentials, and security decisions.
 
 A [Microsoft Foundry Toolbox](https://learn.microsoft.com/azure/foundry/agents/concepts/toolbox-overview)
@@ -29,7 +29,7 @@ The important terms are:
 | Term | Meaning in this project |
 | --- | --- |
 | Agent | Application code that sends a prompt to a model and allows the model to call tools. |
-| Tool | Something the agent can call, such as Azure AI Search, web search, or an MCP operation. |
+| Tool | Something the agent can call, such as Azure AI Search or a knowledge-retrieval MCP operation. |
 | Skill | Reusable instructions describing how to perform a task. Foundry skills are currently preview and are exposed as MCP resources. |
 | MCP | Model Context Protocol, the protocol used by agents to discover and invoke Toolbox capabilities. |
 | Project connection | A Foundry resource that stores a downstream endpoint and authentication configuration. The Toolbox references it by name; this repository does not store its credentials. |
@@ -45,7 +45,7 @@ deployment layer for Citadel:
 1. The platform team defines the reusable capabilities and safety defaults once in
     [`catalog/core.yaml`](catalog/core.yaml).
 2. Each entity changes only its own [`entities/<entity>/overlay.yaml`](entities/example/overlay.yaml),
-    such as connection references, an index name, and approved web domains.
+    such as connection references, an index name, and an entity-scoping filter.
 3. The Python compiler in [`src/citadel_toolbox/compiler.py`](src/citadel_toolbox/compiler.py) merges
     the two files, resolves local environment variables, removes disabled entries, validates safety
     rules, and renders the YAML format accepted by Foundry.
@@ -68,12 +68,13 @@ flowchart LR
       Agent[Agent code] -->|one governed MCP endpoint| APIM[Citadel APIM access contract]
       APIM -->|protected backend MCP endpoint| Foundry
      Foundry --> Search[Azure AI Search]
-     Foundry --> MCP[Entity MCP service]
-     Foundry --> Web[Approved web search]
+    Foundry --> IQ[Microsoft Foundry IQ]
+    Foundry --> Work[Work IQ optional]
+    Foundry --> Discovery[Toolbox Search]
 ```
 
-This repository does **not** create the Foundry project, model deployment, Search index, entity MCP
-backend, or project connections. Those resources must already exist. It creates the governed
+This repository does **not** create the Foundry project, model deployment, Search index, knowledge
+base, or project connections. Those resources must already exist. It creates the governed
 Toolbox definition that joins them and publishes that definition to Foundry.
 
 ### Register the Toolbox in APIM
@@ -87,25 +88,21 @@ registration commands, security boundaries, and a VS Code client example.
 
 ## What Is Included
 
-| Capability | Provider | Default |
+| Capability | Provider | Microsoft Default |
 | --- | --- | --- |
 | Enterprise knowledge | Azure AI Search | Enabled |
-| Government systems | Read-only MCP | Enabled |
-| Approved public information | Restricted Web Search | Enabled |
+| Policy knowledge | Microsoft Foundry IQ MCP | Enabled |
 | Tool discovery | Toolbox Search | Enabled |
-| Employee and M365 context | Work IQ preview | Disabled |
-| Workflow actions | Approval-gated MCP | Disabled |
+| Employee and M365 context | Work IQ preview | Enabled |
 
-These are shared catalog defaults. The Microsoft overlay enables Foundry IQ and Work IQ,
-disables Government Systems (including the former weather source) and web search, and leaves
-workflow actions disabled. Toolbox Search remains enabled as a separate discovery tool.
+These are Microsoft overlay defaults. Work IQ is optional and disabled by default in the shared
+catalog; Microsoft enables it. Toolbox Search remains a distinct discovery tool.
 Enabled in source does not mean published or authenticated: both IQ integrations
 require existing project connections before a strict Microsoft build can succeed.
 
 On 2026-11-11, `microsoft-toolbox` version 3 was published and independently verified as
-the default. It includes Azure AI Search, Work IQ, Foundry IQ, separate Toolbox Search,
-and the three existing skills, with web search and weather excluded. The stable APIM
-route is unchanged. Work IQ's last runtime check returned `CONSENT_REQUIRED`, blocking
+the default. The stable APIM route is unchanged. This source cleanup does not change that published
+immutable version or its attached skills. Work IQ's last runtime check returned `CONSENT_REQUIRED`, blocking
 tool discovery; publication does not establish successful delegated access or end-to-end
 operation through APIM.
 
@@ -121,14 +118,10 @@ when the index does not contain sufficient evidence.
 This repository does not create or populate the Search index. Foundry holds the Search connection,
 and Citadel/APIM controls which agents may reach the governed Toolbox endpoint.
 
-### Government Systems
+### Microsoft Foundry IQ
 
-For the Microsoft entity, Government Systems is disabled and **Foundry IQ** is enabled in
-[entities/microsoft/overlay.yaml](entities/microsoft/overlay.yaml). The shared catalog and other
-entities retain the Government Systems default. After the former Toolbox was no longer found,
-`microsoft-toolbox` was recreated on 2026-11-06 as default version 1, without the weather MCP source,
-retaining Search, approved web search, discovery, and skills. Its existing APIM endpoint passed
-initialization and tool discovery after restoration; the gateway configuration was unchanged.
+Microsoft Foundry IQ is enabled in
+[entities/microsoft/overlay.yaml](entities/microsoft/overlay.yaml).
 
 Foundry IQ exposes an existing Azure AI Search knowledge base as an MCP server with the
 `knowledge_base_retrieve` tool. Configure a dedicated MCP project connection in the same Foundry
@@ -148,51 +141,23 @@ identity propagation and document-level filtering before enabling access for con
 The compiler emits only the project connection name for connection-backed MCP sources; inline
 endpoint, approval, or tool-filter metadata does not configure the remote connection. Verify its
 actual target and authentication before publication. Missing Foundry IQ variables intentionally
-block a strict Microsoft build when Foundry IQ is enabled, rather than reuse the former
-systems/weather connection. Disabled capabilities require no connection variables.
+block a strict Microsoft build when Foundry IQ is enabled. Disabled optional capabilities require
+no connection variables.
 
 This changes source configuration only. An existing Toolbox remains on its current immutable
 version until a new version is created, tested through its version-specific endpoint, and promoted.
-Keep the other sources and skills unchanged and remove the old systems connection from the new
-version only. APIM's stable Toolbox backend URL does not need to change.
+APIM's stable Toolbox backend URL does not need to change.
 
 See [Query a knowledge base via MCP](https://learn.microsoft.com/azure/search/agentic-retrieval-how-to-retrieve#call-the-mcp-endpoint)
 for supported API versions, authentication, and response behavior.
-
-Government Systems is a read-only MCP connection for entity records such as applications, cases,
-accounts, and transaction status. Foundry connects to the entity's MCP server using the configured
-project connection; tools discovered from that server are searchable using terms such as cases,
-applications, CRM, ERP, HR, and finance.
-
-The included reference MCP server exposes only
-`get_application_status(application_id)`. It returns sample in-memory data and does not connect to a
-real government system. For production, each entity replaces that adapter with an authenticated,
-authorized integration to its case-management, CRM, ERP, or other system of record. The production
-path is:
-
-```text
-Agent -> Citadel APIM -> Foundry Toolbox -> read-only entity MCP -> system of record
-```
-
-### Approved Public Information
-
-Approved Public Information uses Foundry Web Search with an allowlist supplied by the entity
-overlay. For example, an entity can restrict results to its official government and legislation
-domains. It is intended for current public regulations and information that is not available in the
-private knowledge index. Personal, confidential, or internal information must never be included in
-a web-search query.
-
-The Microsoft overlay disables this source in favor of its Work IQ project connection for
-employee and M365 context. Work IQ is not a public-web search replacement in coverage: it queries
-the connected enterprise information within the authenticated user's permissions.
 
 ### Tool Discovery
 
 Tool Discovery uses Foundry `toolbox_search`. It is a meta-tool rather than a business-system
 integration: it searches the tools available inside the Toolbox and reveals the relevant tool to
 the model when needed. This avoids placing every tool definition into every prompt. For example, a
-request for an application status can discover a Government Systems tool, while a policy question
-can discover Enterprise Knowledge. Tool Discovery does not bypass APIM policy, Foundry connection
+policy question can discover Enterprise Knowledge or Microsoft Foundry IQ. Tool Discovery does not
+bypass APIM policy, Foundry connection
 authorization, tool allowlists, or approval requirements.
 
 ### Employee and M365 Context
@@ -209,38 +174,19 @@ consent, or implement delegated authentication. Verify connection compatibility 
 before publishing. The current APIM subscription-key plus managed-identity route does not forward
 the end user's identity and alone is insufficient for delegated Work IQ access.
 
-### Workflow Actions
-
-Workflow Actions is a separate MCP connection for state-changing operations such as creating,
-submitting, updating, or cancelling a request. It is disabled by default and must remain separate
-from the read-only Government Systems connection. The included reference action server exposes only
-`create_service_request(service_name, summary)`. It generates an in-memory sample request and does
-not connect to a production backend.
-
-In production, the entity implements the action MCP adapter against its approved transaction
-backend, such as Dynamics 365, ServiceNow, SAP, Power Automate, a case-management API, or another
-entity-specific workflow service. The production path is:
-
-```text
-Agent -> Citadel APIM -> Foundry Toolbox -> action MCP -> transaction backend
-```
-
-Every Workflow Actions tool must declare `require_approval: always`. The consuming agent runtime
-must pause the exact pending call, show its arguments, and record explicit user approval before
-execution; metadata or a system-prompt instruction alone does not enforce approval. APIM then
-applies the access contract, permitted-tool policy, subscription and rate limits, logging, and
-backend isolation.
-
 ### Tools and Skills
 
-Tools perform retrieval or system operations. Skills are versioned instructions that tell an agent
-how to select and safely use those tools. The publish script provisions three Foundry skills:
+Tools perform retrieval and discovery. Skills are versioned instructions that tell an agent
+how to select and safely use those tools. The shared catalog and Microsoft overlay provide:
 
-- **Enterprise grounding** directs the agent to authoritative private sources and citations.
-- **Government service routing** chooses between enterprise knowledge, read-only systems, approved
-    public search, and actions.
-- **Safe transaction** requires exact-operation confirmation, least privilege, and an audit-ready
-    result for state-changing calls.
+- [Enterprise grounding](skills/enterprise-grounding/SKILL.md) directs the agent to authoritative
+    Search or Foundry IQ evidence, effective policy documents, and traceable citations.
+- [Workplace context](skills/workplace-context/SKILL.md), enabled by the Microsoft overlay,
+    guides Work IQ retrieval within delegated permissions, handles consent failures, and separates
+    workplace context from policy authority.
+
+Published versions retain their attached skills until a new version is created, validated, and
+promoted; this source catalog description is not a claim about the live skill inventory.
 
 ## How the Toolbox Is Built
 
@@ -263,19 +209,11 @@ following Foundry-facing shape:
 description: Shared Citadel capabilities customized for Example Entity.
 connections:
     - name: search
-        index: policy-index
-    - name: read-mcp
+      index: policy-index
 tools:
-    - type: web_search
-        filters:
-            allowed_domains: [example.gov, legislation.example.gov]
-        require_approval: never
-        name: approved-web-search
     - type: toolbox_search
 skills:
     - name: enterprise-grounding
-    - name: government-service-routing
-    - name: safe-transaction
 ```
 
 The `connections` names refer to existing Foundry project connections. Their keys, tokens, and
@@ -300,11 +238,11 @@ During publication, the script performs these operations in order:
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 - Access to an existing Microsoft Foundry project
 - A project connection to Azure AI Search and an existing index
-- A project connection to a deployed read-only MCP endpoint
 
 The deployment identity must belong to the tenant that owns the project and have permission to use
-the project and its connections. This add-on does not create the Foundry project, Search index, MCP
-service, or project connections.
+the project and its connections. This add-on does not create the Foundry project, Search index,
+knowledge base, or project connections. The Microsoft overlay additionally requires existing
+Microsoft Foundry IQ and Work IQ project connections.
 
 ## Part 1: Create and Publish the Toolbox
 
@@ -334,9 +272,10 @@ The script prompts for:
 
 - Entity name and display name
 - Search connection resource ID and index name
-- Read-only MCP connection resource ID and endpoint
-- Approved web domains
 - Foundry tenant ID and project endpoint
+
+For overlays that enable Microsoft Foundry IQ or Work IQ, supply their additional connection
+references in the entity's ignored `.env` before strict validation, following its `.env.example`.
 
 Rerunning the script reuses the entity and its local `.env`. Add `-Reconfigure` to replace those
 values, `-SkipPublish` for local setup only, or `-UpdateSkills` when intentionally publishing new
@@ -391,9 +330,9 @@ finally {
 ```
 
 Test the version-specific MCP endpoint reported by the CLI before connecting agents. Confirm Search
-returns expected citations, web search stays within approved domains, `resources/list` discovers the
-skills, the read MCP enforces identity and authorization, and no state-changing operation is
-available.
+returns authorized results with expected citations, Toolbox Search discovers the intended tools,
+and `resources/list` discovers the expected skills. Validate Microsoft Foundry IQ retrieval and
+delegated Work IQ access separately when enabled.
 
 ## Part 2: Register the Toolbox in APIM
 
@@ -600,19 +539,6 @@ azd ai toolbox versions list $toolboxName `
 azd ai toolbox publish $toolboxName '<known-good-version>' `
     --project-endpoint $projectEndpoint --no-prompt
 ```
-
-## Local MCP Reference Server
-
-The included in-memory MCP service is a development adapter, not a production backend. Read and
-action profiles are deliberately separate:
-
-```powershell
-python -m citadel_toolbox_mcp.server --profile read --transport streamable-http
-python -m citadel_toolbox_mcp.server --profile actions --transport streamable-http
-```
-
-The VS Code development configuration in `.vscode/mcp.json` starts the read profile over stdio.
-Replace `GovernmentService` with an authenticated entity backend before production deployment.
 
 ## Production Guardrails
 

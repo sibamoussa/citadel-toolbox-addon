@@ -20,16 +20,12 @@ dev = [
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
 ]
-mcp = [
-  "mcp>=2.3,<3",
-]
 
 [project.scripts]
 citadel-toolbox = "citadel_toolbox.cli:main"
-citadel-government-mcp = "citadel_toolbox_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/citadel_toolbox", "src/citadel_toolbox_mcp"]
+packages = ["src/citadel_toolbox"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
