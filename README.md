@@ -96,6 +96,19 @@ registration commands, security boundaries, and a VS Code client example.
 | Employee and M365 context | Work IQ preview | Disabled |
 | Workflow actions | Approval-gated MCP | Disabled |
 
+These are shared catalog defaults. The Microsoft overlay enables Foundry IQ and Work IQ,
+disables Government Systems (including the former weather source) and web search, and leaves
+workflow actions disabled. Toolbox Search remains enabled as a separate discovery tool.
+Enabled in source does not mean published or authenticated: both IQ integrations
+require existing project connections before a strict Microsoft build can succeed.
+
+On 2026-11-11, `microsoft-toolbox` version 3 was published and independently verified as
+the default. It includes Azure AI Search, Work IQ, Foundry IQ, separate Toolbox Search,
+and the three existing skills, with web search and weather excluded. The stable APIM
+route is unchanged. Work IQ's last runtime check returned `CONSENT_REQUIRED`, blocking
+tool discovery; publication does not establish successful delegated access or end-to-end
+operation through APIM.
+
 ### Enterprise Knowledge
 
 Enterprise Knowledge connects the Toolbox to an existing Azure AI Search index through a Foundry
@@ -109,6 +122,42 @@ This repository does not create or populate the Search index. Foundry holds the 
 and Citadel/APIM controls which agents may reach the governed Toolbox endpoint.
 
 ### Government Systems
+
+For the Microsoft entity, Government Systems is disabled and **Foundry IQ** is enabled in
+[entities/microsoft/overlay.yaml](entities/microsoft/overlay.yaml). The shared catalog and other
+entities retain the Government Systems default. After the former Toolbox was no longer found,
+`microsoft-toolbox` was recreated on 2026-11-06 as default version 1, without the weather MCP source,
+retaining Search, approved web search, discovery, and skills. Its existing APIM endpoint passed
+initialization and tool discovery after restoration; the gateway configuration was unchanged.
+
+Foundry IQ exposes an existing Azure AI Search knowledge base as an MCP server with the
+`knowledge_base_retrieve` tool. Configure a dedicated MCP project connection in the same Foundry
+project as the Toolbox, using the knowledge base's complete endpoint:
+
+```text
+https://<search-service>.search.windows.net/knowledgebases/<knowledge-base>/mcp?api-version=2026-08-01-preview
+```
+
+Set `MICROSOFT_FOUNDRY_IQ_MCP_URL` and `MICROSOFT_FOUNDRY_IQ_CONNECTION_ID` using
+[entities/microsoft/.env.example](entities/microsoft/.env.example). The connection must target that
+exact URL and provide its own authentication. Prefer a supported identity-based connection whose
+identity has Search Index Data Reader on the search service. The APIM-to-Toolbox identity grant
+does not grant Toolbox-to-Search access. For permission-protected knowledge, validate end-user
+identity propagation and document-level filtering before enabling access for consumers.
+
+The compiler emits only the project connection name for connection-backed MCP sources; inline
+endpoint, approval, or tool-filter metadata does not configure the remote connection. Verify its
+actual target and authentication before publication. Missing Foundry IQ variables intentionally
+block a strict Microsoft build when Foundry IQ is enabled, rather than reuse the former
+systems/weather connection. Disabled capabilities require no connection variables.
+
+This changes source configuration only. An existing Toolbox remains on its current immutable
+version until a new version is created, tested through its version-specific endpoint, and promoted.
+Keep the other sources and skills unchanged and remove the old systems connection from the new
+version only. APIM's stable Toolbox backend URL does not need to change.
+
+See [Query a knowledge base via MCP](https://learn.microsoft.com/azure/search/agentic-retrieval-how-to-retrieve#call-the-mcp-endpoint)
+for supported API versions, authentication, and response behavior.
 
 Government Systems is a read-only MCP connection for entity records such as applications, cases,
 accounts, and transaction status. Foundry connects to the entity's MCP server using the configured
@@ -133,6 +182,10 @@ domains. It is intended for current public regulations and information that is n
 private knowledge index. Personal, confidential, or internal information must never be included in
 a web-search query.
 
+The Microsoft overlay disables this source in favor of its Work IQ project connection for
+employee and M365 context. Work IQ is not a public-web search replacement in coverage: it queries
+the connected enterprise information within the authenticated user's permissions.
+
 ### Tool Discovery
 
 Tool Discovery uses Foundry `toolbox_search`. It is a meta-tool rather than a business-system
@@ -148,6 +201,13 @@ Employee and M365 Context is reserved for Work IQ preview and is disabled by def
 it uses delegated user identity so results remain within the signed-in user's permissions. The
 current preview is not supported with network-isolated Foundry projects, so an entity must validate
 its security and networking requirements before enabling it.
+
+The Microsoft overlay enables this capability and requires `WORK_IQ_PROJECT_CONNECTION_ID`,
+as shown in [entities/microsoft/.env.example](entities/microsoft/.env.example). The compiler
+references that existing connection by name; it does not create the connection, obtain user
+consent, or implement delegated authentication. Verify connection compatibility and user sign-in
+before publishing. The current APIM subscription-key plus managed-identity route does not forward
+the end user's identity and alone is insufficient for delegated Work IQ access.
 
 ### Workflow Actions
 

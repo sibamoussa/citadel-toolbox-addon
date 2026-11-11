@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from citadel_toolbox.compiler import (
@@ -181,3 +183,82 @@ def test_compile_does_not_require_disabled_tool_variables(tmp_path) -> None:
 
     assert bundle["tools"] == []
     assert rendered["tools"] == []
+
+
+def test_microsoft_overlay_enables_iq_connections_without_government_mcp() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bundle, rendered = compile_bundle(
+        root / "catalog/core.yaml",
+        root / "entities/microsoft/overlay.yaml",
+        variables={
+            "MICROSOFT_SEARCH_CONNECTION_ID": "/projects/demo/connections/search",
+            "MICROSOFT_SEARCH_INDEX_NAME": "policy-index",
+            "MICROSOFT_FOUNDRY_IQ_MCP_URL": (
+                "https://demo.search.windows.net/knowledgebases/policies/mcp"
+                "?api-version=2026-08-01-preview"
+            ),
+            "MICROSOFT_FOUNDRY_IQ_CONNECTION_ID": "/projects/demo/connections/foundry-iq",
+            "WORK_IQ_PROJECT_CONNECTION_ID": "/projects/demo/connections/work-iq",
+        },
+    )
+
+    tools = {tool["id"]: tool for tool in bundle["tools"]}
+    assert "government-systems" not in tools
+    assert "approved-web-search" not in tools
+    assert "foundry-iq" in tools
+    assert tools["employee-context"]["constraints"]["identity"] == "delegated-user"
+    assert rendered["tools"] == [{"type": "toolbox_search"}]
+    assert rendered["connections"] == [
+        {"name": "search", "index": "policy-index"},
+        {"name": "work-iq"},
+        {"name": "foundry-iq"},
+    ]
+
+
+def test_microsoft_overlay_ignores_legacy_weather_connection() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bundle, rendered = compile_bundle(
+            root / "catalog/core.yaml",
+            root / "entities/microsoft/overlay.yaml",
+            variables={
+                "MICROSOFT_SEARCH_CONNECTION_ID": "/projects/demo/connections/search",
+                "MICROSOFT_SEARCH_INDEX_NAME": "policy-index",
+                "MICROSOFT_SYSTEMS_CONNECTION_ID": "/projects/demo/connections/weather-tool",
+                "MICROSOFT_SYSTEMS_MCP_URL": "https://weather.invalid/mcp",
+                "MICROSOFT_FOUNDRY_IQ_MCP_URL": "https://demo.search.windows.net/knowledgebases/policies/mcp?api-version=2026-08-01-preview",
+                "MICROSOFT_FOUNDRY_IQ_CONNECTION_ID": "/projects/demo/connections/foundry-iq",
+                "WORK_IQ_PROJECT_CONNECTION_ID": "/projects/demo/connections/work-iq",
+            },
+        )
+    assert {tool["id"] for tool in bundle["tools"]} == {
+        "enterprise-knowledge", "employee-context", "foundry-iq",
+        "tool-discovery"
+    }
+    assert rendered["connections"] == [
+        {"name": "search", "index": "policy-index"},
+        {"name": "work-iq"},
+        {"name": "foundry-iq"},
+    ]
+
+
+@pytest.mark.parametrize("missing_variable", [
+    "MICROSOFT_FOUNDRY_IQ_MCP_URL",
+    "MICROSOFT_FOUNDRY_IQ_CONNECTION_ID",
+    "WORK_IQ_PROJECT_CONNECTION_ID",
+])
+def test_microsoft_overlay_requires_iq_configuration(missing_variable: str) -> None:
+    root = Path(__file__).resolve().parents[1]
+    variables = {
+        "MICROSOFT_SEARCH_CONNECTION_ID": "/projects/demo/connections/search",
+        "MICROSOFT_SEARCH_INDEX_NAME": "policy-index",
+        "MICROSOFT_FOUNDRY_IQ_MCP_URL": "https://demo.search.windows.net/knowledgebases/policies/mcp?api-version=2026-08-01-preview",
+        "MICROSOFT_FOUNDRY_IQ_CONNECTION_ID": "/projects/demo/connections/foundry-iq",
+        "WORK_IQ_PROJECT_CONNECTION_ID": "/projects/demo/connections/work-iq",
+    }
+    variables.pop(missing_variable)
+    with pytest.raises(ConfigurationError, match=missing_variable):
+        compile_bundle(
+            root / "catalog/core.yaml",
+            root / "entities/microsoft/overlay.yaml",
+            variables=variables,
+        )

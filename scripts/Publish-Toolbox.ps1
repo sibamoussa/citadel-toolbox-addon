@@ -36,7 +36,7 @@ try {
         throw 'Unable to list Foundry Toolboxes. Reauthenticate with azd and confirm project access.'
     }
     $toolboxInventoryResult = $toolboxInventoryJson | ConvertFrom-Json
-    $toolboxes = if ($null -ne $toolboxInventoryResult.toolboxes) {
+    $toolboxes = if ($toolboxInventoryResult.PSObject.Properties.Name -contains 'toolboxes') {
         @($toolboxInventoryResult.toolboxes)
     }
     else {
@@ -52,7 +52,7 @@ try {
         throw 'Unable to list Foundry skills. Run azd auth login --tenant-id <owning-tenant-id>, then confirm the identity has project access.'
     }
     $skillInventoryResult = $skillInventoryJson | ConvertFrom-Json
-    $skillInventory = if ($null -ne $skillInventoryResult.skills) {
+    $skillInventory = if ($skillInventoryResult.PSObject.Properties.Name -contains 'skills') {
         @($skillInventoryResult.skills)
     }
     else {

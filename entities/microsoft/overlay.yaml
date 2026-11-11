@@ -9,20 +9,26 @@ tools:
       index_name: ${MICROSOFT_SEARCH_INDEX_NAME}
 
   - id: employee-context
-    enabled: false
+    enabled: true
 
   - id: government-systems
+    enabled: false
+
+  - id: foundry-iq
+    enabled: true
+    risk: read
     provider:
-      server_label: microsoft-systems
-      server_url: ${MICROSOFT_SYSTEMS_MCP_URL}
-      project_connection_id: ${MICROSOFT_SYSTEMS_CONNECTION_ID}
+      type: mcp
+      server_label: foundry-iq
+      server_url: ${MICROSOFT_FOUNDRY_IQ_MCP_URL}
+      project_connection_id: ${MICROSOFT_FOUNDRY_IQ_CONNECTION_ID}
+      require_approval: never
 
   - id: approved-web-search
-    provider:
-      filters:
-        allowed_domains:
-          - microsoft.com
-          - learn.microsoft.com
+    enabled: false
+
+  - id: tool-discovery
+    enabled: true
 
   - id: workflow-actions
     enabled: false

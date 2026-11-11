@@ -126,6 +126,8 @@ def validate_bundle(bundle: Mapping[str, Any]) -> None:
             required_fields = ("project_connection_id", "index_name")
         elif provider_type == "mcp":
             required_fields = ("project_connection_id", "server_url")
+        elif provider_type == "work_iq_preview":
+            required_fields = ("project_connection_id",)
         missing_fields = [field for field in required_fields if not provider.get(field)]
         if missing_fields:
             fields = ", ".join(missing_fields)
@@ -145,7 +147,7 @@ def render_toolbox(bundle: Mapping[str, Any]) -> dict[str, Any]:
             continue
         provider = copy.deepcopy(tool.get("provider", {}))
         provider_type = provider.get("type")
-        if provider_type in {"azure_ai_search", "mcp"}:
+        if provider_type in {"azure_ai_search", "mcp", "work_iq_preview"}:
             connection_id = provider.get("project_connection_id", "")
             connection = {"name": connection_id.rstrip("/").rsplit("/", 1)[-1]}
             if provider_type == "azure_ai_search":
